@@ -1,0 +1,75 @@
+- generic [active] [ref=e1]:
+  - button "Open Next.js Dev Tools" [ref=e36] [cursor=pointer]:
+    - img [ref=e37]
+  - alert [ref=e40]
+  - banner [ref=e41]:
+    - generic [ref=e43]:
+      - link "Realm OI" [ref=e44] [cursor=pointer]:
+        - /url: /
+      - navigation [ref=e45]:
+        - link "助手" [ref=e46] [cursor=pointer]:
+          - /url: /
+        - link "账单" [ref=e47] [cursor=pointer]:
+          - /url: /billing
+        - link "设置" [ref=e48] [cursor=pointer]:
+          - /url: /settings/codex
+      - generic [ref=e49]:
+        - generic [ref=e50]:
+          - text: abflow_0817
+          - generic [ref=e51]: (user)
+        - button "退出" [ref=e52]
+  - generic [ref=e390]:
+    - generic [ref=e393]:
+      - generic [ref=e394]:
+        - generic [ref=e395]: R
+        - generic [ref=e396]: Realm
+      - generic [ref=e397]:
+        - generic [ref=e398]: 会话就绪
+        - generic [ref=e400]:
+          - generic [ref=e401]: 当前 Job
+          - generic [ref=e402]: 72119382210d4b3c92ecd61a07bddc47
+          - generic [ref=e403]: "status: failed"
+        - generic [ref=e404]:
+          - generic [ref=e405]: Runs
+          - generic [ref=e406]:
+            - button "72119382210d4b3c92ecd61a07bddc47 failed" [ref=e407]:
+              - generic [ref=e408]: 72119382210d4b3c92ecd61a07bddc47
+              - generic [ref=e409]: failed
+            - button "186d0b47b1444a6aa9854c725a8b95f0 failed" [ref=e410]:
+              - generic [ref=e411]: 186d0b47b1444a6aa9854c725a8b95f0
+              - generic [ref=e412]: failed
+        - button "Cancel Job" [ref=e414]:
+          - img [ref=e416]
+          - text: Cancel Job
+      - button "返回大厅" [ref=e419]:
+        - img [ref=e421]
+        - text: 返回大厅
+    - generic [ref=e423]:
+      - generic [ref=e424]:
+        - generic [ref=e425]:
+          - generic [ref=e428]: 已创建 Job：186d0b47b1444a6aa9854c725a8b95f0 正在启动并追踪终端输出…
+          - generic [ref=e431]: Job 已结束（status=failed）。未获取到 solution.json（可能尚未生成或已清理）。
+          - generic [ref=e434]: 请给我最简 C++17 AC 版本
+          - generic [ref=e437]: 已创建 Job：72119382210d4b3c92ecd61a07bddc47 我会基于上一轮代码与“追加指令”进行修复/迭代，并实时输出终端与状态。
+          - generic [ref=e440]: Job 已结束（status=failed）。未获取到 solution.json（可能尚未生成或已清理）。
+          - generic [ref=e443]: Job 已结束（status=failed）。未获取到 solution.json（可能尚未生成或已清理）。
+          - generic [ref=e446]: Job 已结束（status=failed）。未获取到 solution.json（可能尚未生成或已清理）。
+        - generic [ref=e449]:
+          - textbox "继续对话（会创建新 Job 进行修复/迭代）..." [ref=e450]
+          - button [disabled] [ref=e451]:
+            - img [ref=e452]
+      - generic [ref=e456]:
+        - generic [ref=e458]:
+          - button "TERMINAL" [ref=e459]
+          - button "STATUS" [ref=e460]
+          - button "CODE" [ref=e461]
+        - generic [ref=e470]:
+          - textbox "Terminal input" [ref=e471]
+          - generic:
+            - generic:
+              - generic: "[terminal] connecting… (job=72119382210d4b3c92ecd61a0"
+            - generic:
+              - generic: 7bddc47)
+        - generic [ref=e473]:
+          - generic [ref=e474]: "status: failed"
+          - generic [ref=e475]: "model: model-route-channel"

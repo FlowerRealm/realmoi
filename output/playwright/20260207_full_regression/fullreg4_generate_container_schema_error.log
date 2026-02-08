@@ -1,0 +1,61 @@
+2:2026-02-07T22:22:08.843153Z ERROR codex_api::endpoint::responses: error=http 400 Bad Request: Some("{\n  \"error\": {\n    \"message\": \"Invalid schema for response_format 'codex_output_schema': In context=(), 'required' is required to be supplied and to be an array including every key in properties. Missing 'assumptions'.\",\n    \"type\": \"invalid_request_error\",\n    \"param\": \"text.format.schema\",\n    \"code\": \"invalid_json_schema\"\n  }\n}")
+5:    "message": "Invalid schema for response_format 'codex_output_schema': In context=(), 'required' is required to be supplied and to be an array including every key in properties. Missing 'assumptions'.",
+8:    "code": "invalid_json_schema"
+13:    "message": "Invalid schema for response_format 'codex_output_schema': In context=(), 'required' is required to be supplied and to be an array including every key in properties. Missing 'assumptions'.",
+16:    "code": "invalid_json_schema"
+20:2026-02-07T22:22:22.774941Z ERROR codex_api::endpoint::responses: error=http 400 Bad Request: Some("{\n  \"error\": {\n    \"message\": \"Invalid schema for response_format 'codex_output_schema': In context=(), 'required' is required to be supplied and to be an array including every key in properties. Missing 'assumptions'.\",\n    \"type\": \"invalid_request_error\",\n    \"param\": \"text.format.schema\",\n    \"code\": \"invalid_json_schema\"\n  }\n}")
+23:    "message": "Invalid schema for response_format 'codex_output_schema': In context=(), 'required' is required to be supplied and to be an array including every key in properties. Missing 'assumptions'.",
+26:    "code": "invalid_json_schema"
+31:    "message": "Invalid schema for response_format 'codex_output_schema': In context=(), 'required' is required to be supplied and to be an array including every key in properties. Missing 'assumptions'.",
+34:    "code": "invalid_json_schema"
+38:2026-02-07T22:22:36.133132Z ERROR codex_api::endpoint::responses: error=http 400 Bad Request: Some("{\n  \"error\": {\n    \"message\": \"Invalid schema for response_format 'codex_output_schema': In context=(), 'required' is required to be supplied and to be an array including every key in properties. Missing 'assumptions'.\",\n    \"type\": \"invalid_request_error\",\n    \"param\": \"text.format.schema\",\n    \"code\": \"invalid_json_schema\"\n  }\n}")
+41:    "message": "Invalid schema for response_format 'codex_output_schema': In context=(), 'required' is required to be supplied and to be an array including every key in properties. Missing 'assumptions'.",
+44:    "code": "invalid_json_schema"
+49:    "message": "Invalid schema for response_format 'codex_output_schema': In context=(), 'required' is required to be supplied and to be an array including every key in properties. Missing 'assumptions'.",
+52:    "code": "invalid_json_schema"
+57:2026-02-07T22:22:53.558387Z ERROR codex_api::endpoint::responses: error=http 400 Bad Request: Some("{\n  \"error\": {\n    \"message\": \"Invalid schema for response_format 'codex_output_schema': In context=(), 'required' is required to be supplied and to be an array including every key in properties. Missing 'assumptions'.\",\n    \"type\": \"invalid_request_error\",\n    \"param\": \"text.format.schema\",\n    \"code\": \"invalid_json_schema\"\n  }\n}")
+60:    "message": "Invalid schema for response_format 'codex_output_schema': In context=(), 'required' is required to be supplied and to be an array including every key in properties. Missing 'assumptions'.",
+63:    "code": "invalid_json_schema"
+68:    "message": "Invalid schema for response_format 'codex_output_schema': In context=(), 'required' is required to be supplied and to be an array including every key in properties. Missing 'assumptions'.",
+71:    "code": "invalid_json_schema"
+75:2026-02-07T22:23:06.855391Z ERROR codex_api::endpoint::responses: error=http 400 Bad Request: Some("{\n  \"error\": {\n    \"message\": \"Invalid schema for response_format 'codex_output_schema': In context=(), 'required' is required to be supplied and to be an array including every key in properties. Missing 'assumptions'.\",\n    \"type\": \"invalid_request_error\",\n    \"param\": \"text.format.schema\",\n    \"code\": \"invalid_json_schema\"\n  }\n}")
+78:    "message": "Invalid schema for response_format 'codex_output_schema': In context=(), 'required' is required to be supplied and to be an array including every key in properties. Missing 'assumptions'.",
+81:    "code": "invalid_json_schema"
+86:    "message": "Invalid schema for response_format 'codex_output_schema': In context=(), 'required' is required to be supplied and to be an array including every key in properties. Missing 'assumptions'.",
+89:    "code": "invalid_json_schema"
+93:2026-02-07T22:23:24.210105Z ERROR codex_api::endpoint::responses: error=http 400 Bad Request: Some("{\n  \"error\": {\n    \"message\": \"Invalid schema for response_format 'codex_output_schema': In context=(), 'required' is required to be supplied and to be an array including every key in properties. Missing 'assumptions'.\",\n    \"type\": \"invalid_request_error\",\n    \"param\": \"text.format.schema\",\n    \"code\": \"invalid_json_schema\"\n  }\n}")
+96:    "message": "Invalid schema for response_format 'codex_output_schema': In context=(), 'required' is required to be supplied and to be an array including every key in properties. Missing 'assumptions'.",
+99:    "code": "invalid_json_schema"
+104:    "message": "Invalid schema for response_format 'codex_output_schema': In context=(), 'required' is required to be supplied and to be an array including every key in properties. Missing 'assumptions'.",
+107:    "code": "invalid_json_schema"
+112:2026-02-07T22:23:42.196280Z ERROR codex_api::endpoint::responses: error=http 400 Bad Request: Some("{\n  \"error\": {\n    \"message\": \"Invalid schema for response_format 'codex_output_schema': In context=(), 'required' is required to be supplied and to be an array including every key in properties. Missing 'assumptions'.\",\n    \"type\": \"invalid_request_error\",\n    \"param\": \"text.format.schema\",\n    \"code\": \"invalid_json_schema\"\n  }\n}")
+115:    "message": "Invalid schema for response_format 'codex_output_schema': In context=(), 'required' is required to be supplied and to be an array including every key in properties. Missing 'assumptions'.",
+118:    "code": "invalid_json_schema"
+123:    "message": "Invalid schema for response_format 'codex_output_schema': In context=(), 'required' is required to be supplied and to be an array including every key in properties. Missing 'assumptions'.",
+126:    "code": "invalid_json_schema"
+130:2026-02-07T22:23:55.574004Z ERROR codex_api::endpoint::responses: error=http 400 Bad Request: Some("{\n  \"error\": {\n    \"message\": \"Invalid schema for response_format 'codex_output_schema': In context=(), 'required' is required to be supplied and to be an array including every key in properties. Missing 'assumptions'.\",\n    \"type\": \"invalid_request_error\",\n    \"param\": \"text.format.schema\",\n    \"code\": \"invalid_json_schema\"\n  }\n}")
+133:    "message": "Invalid schema for response_format 'codex_output_schema': In context=(), 'required' is required to be supplied and to be an array including every key in properties. Missing 'assumptions'.",
+136:    "code": "invalid_json_schema"
+141:    "message": "Invalid schema for response_format 'codex_output_schema': In context=(), 'required' is required to be supplied and to be an array including every key in properties. Missing 'assumptions'.",
+144:    "code": "invalid_json_schema"
+148:2026-02-07T22:24:08.818171Z ERROR codex_api::endpoint::responses: error=http 400 Bad Request: Some("{\n  \"error\": {\n    \"message\": \"Invalid schema for response_format 'codex_output_schema': In context=(), 'required' is required to be supplied and to be an array including every key in properties. Missing 'assumptions'.\",\n    \"type\": \"invalid_request_error\",\n    \"param\": \"text.format.schema\",\n    \"code\": \"invalid_json_schema\"\n  }\n}")
+151:    "message": "Invalid schema for response_format 'codex_output_schema': In context=(), 'required' is required to be supplied and to be an array including every key in properties. Missing 'assumptions'.",
+154:    "code": "invalid_json_schema"
+159:    "message": "Invalid schema for response_format 'codex_output_schema': In context=(), 'required' is required to be supplied and to be an array including every key in properties. Missing 'assumptions'.",
+162:    "code": "invalid_json_schema"
+167:2026-02-07T22:24:33.108361Z ERROR codex_api::endpoint::responses: error=http 400 Bad Request: Some("{\n  \"error\": {\n    \"message\": \"Invalid schema for response_format 'codex_output_schema': In context=(), 'required' is required to be supplied and to be an array including every key in properties. Missing 'assumptions'.\",\n    \"type\": \"invalid_request_error\",\n    \"param\": \"text.format.schema\",\n    \"code\": \"invalid_json_schema\"\n  }\n}")
+170:    "message": "Invalid schema for response_format 'codex_output_schema': In context=(), 'required' is required to be supplied and to be an array including every key in properties. Missing 'assumptions'.",
+173:    "code": "invalid_json_schema"
+178:    "message": "Invalid schema for response_format 'codex_output_schema': In context=(), 'required' is required to be supplied and to be an array including every key in properties. Missing 'assumptions'.",
+181:    "code": "invalid_json_schema"
+185:2026-02-07T22:24:46.325442Z ERROR codex_api::endpoint::responses: error=http 400 Bad Request: Some("{\n  \"error\": {\n    \"message\": \"Invalid schema for response_format 'codex_output_schema': In context=(), 'required' is required to be supplied and to be an array including every key in properties. Missing 'assumptions'.\",\n    \"type\": \"invalid_request_error\",\n    \"param\": \"text.format.schema\",\n    \"code\": \"invalid_json_schema\"\n  }\n}")
+188:    "message": "Invalid schema for response_format 'codex_output_schema': In context=(), 'required' is required to be supplied and to be an array including every key in properties. Missing 'assumptions'.",
+191:    "code": "invalid_json_schema"
+196:    "message": "Invalid schema for response_format 'codex_output_schema': In context=(), 'required' is required to be supplied and to be an array including every key in properties. Missing 'assumptions'.",
+199:    "code": "invalid_json_schema"
+203:2026-02-07T22:24:59.491635Z ERROR codex_api::endpoint::responses: error=http 400 Bad Request: Some("{\n  \"error\": {\n    \"message\": \"Invalid schema for response_format 'codex_output_schema': In context=(), 'required' is required to be supplied and to be an array including every key in properties. Missing 'assumptions'.\",\n    \"type\": \"invalid_request_error\",\n    \"param\": \"text.format.schema\",\n    \"code\": \"invalid_json_schema\"\n  }\n}")
+206:    "message": "Invalid schema for response_format 'codex_output_schema': In context=(), 'required' is required to be supplied and to be an array including every key in properties. Missing 'assumptions'.",
+209:    "code": "invalid_json_schema"
+214:    "message": "Invalid schema for response_format 'codex_output_schema': In context=(), 'required' is required to be supplied and to be an array including every key in properties. Missing 'assumptions'.",
+217:    "code": "invalid_json_schema"
+221:[generate] failed: codex_exit_1

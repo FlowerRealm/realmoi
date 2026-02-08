@@ -1,0 +1,66 @@
+- generic [active] [ref=e1]:
+  - button "Open Next.js Dev Tools" [ref=e7] [cursor=pointer]:
+    - img [ref=e8]
+  - alert [ref=e11]
+  - banner [ref=e12]:
+    - generic [ref=e14]:
+      - link "Realm OI" [ref=e15] [cursor=pointer]:
+        - /url: /
+      - navigation [ref=e16]:
+        - link "助手" [ref=e17] [cursor=pointer]:
+          - /url: /
+        - link "账单" [ref=e18] [cursor=pointer]:
+          - /url: /billing
+        - link "设置" [ref=e19] [cursor=pointer]:
+          - /url: /settings/codex
+      - generic [ref=e20]:
+        - generic [ref=e21]:
+          - text: abflow_0817
+          - generic [ref=e22]: (user)
+        - button "退出" [ref=e23]
+  - generic [ref=e131]:
+    - generic [ref=e134]:
+      - generic [ref=e135]:
+        - generic [ref=e136]: R
+        - generic [ref=e137]: Realm
+      - generic [ref=e138]:
+        - generic [ref=e139]: 会话就绪
+        - generic [ref=e141]:
+          - generic [ref=e142]: 当前 Job
+          - generic [ref=e143]: c0bcc1946efe44268d134574a44ecf2b
+          - generic [ref=e144]: "status: failed"
+        - generic [ref=e145]:
+          - generic [ref=e146]: Runs
+          - button "c0bcc1946efe44268d134574a44ecf2b failed" [ref=e196]:
+            - generic [ref=e149]: c0bcc1946efe44268d134574a44ecf2b
+            - generic [ref=e150]: failed
+        - button "Cancel Job" [ref=e152]:
+          - img [ref=e154]
+          - text: Cancel Job
+      - button "返回大厅" [ref=e157]:
+        - img [ref=e159]
+        - text: 返回大厅
+    - generic [ref=e161]:
+      - generic [ref=e162]:
+        - generic [ref=e163]:
+          - generic [ref=e166]: 已创建 Job：c0bcc1946efe44268d134574a44ecf2b 正在启动并追踪终端输出…
+          - generic [ref=e199]: "Job 已结束（status=failed）。失败原因：failed: generate_failed"
+        - generic [ref=e169]:
+          - textbox "继续对话（会创建新 Job 进行修复/迭代）..." [ref=e170]
+          - button [disabled] [ref=e171]:
+            - img [ref=e172]
+      - generic [ref=e176]:
+        - generic [ref=e178]:
+          - button "TERMINAL" [ref=e179]
+          - button "STATUS" [ref=e180]
+          - button "CODE" [ref=e181]
+        - generic [ref=e190]:
+          - textbox "Terminal input" [ref=e191]
+          - generic:
+            - generic:
+              - generic: "[terminal] connecting… (job=c0bcc1946efe44268d134574a"
+            - generic:
+              - generic: 44ecf2b)
+        - generic [ref=e193]:
+          - generic [ref=e194]: "status: failed"
+          - generic [ref=e195]: "model: model-route-channel"

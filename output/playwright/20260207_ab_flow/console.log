@@ -1,0 +1,14 @@
+[    1156ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:8000/api/auth/me:0
+[   51091ms] [ERROR] Failed to load resource: the server responded with a status of 403 (Forbidden) @ http://localhost:8000/api/admin/upstream/channels:0
+[   51093ms] [ERROR] Failed to load resource: the server responded with a status of 403 (Forbidden) @ http://localhost:8000/api/admin/upstream/channels:0
+[  267659ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:8000/api/jobs/2be3532d313e42f6a3acf0df116f536b/artifacts/solution.json:0
+[  267666ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:8000/api/jobs/2be3532d313e42f6a3acf0df116f536b/artifacts/report.json:0
+[  267667ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:8000/api/jobs/2be3532d313e42f6a3acf0df116f536b/artifacts/main.cpp:0
+[  421581ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:8000/api/jobs/2be3532d313e42f6a3acf0df116f536b/artifacts/solution.json:0
+[  421581ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:8000/api/jobs/2be3532d313e42f6a3acf0df116f536b/artifacts/main.cpp:0
+[  421585ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:8000/api/jobs/2be3532d313e42f6a3acf0df116f536b/artifacts/report.json:0
+[  506386ms] [ERROR] Failed to load resource: the server responded with a status of 403 (Forbidden) @ http://localhost:8000/api/admin/upstream/channels:0
+[  506400ms] [ERROR] Failed to load resource: the server responded with a status of 403 (Forbidden) @ http://localhost:8000/api/admin/upstream/channels:0
+[  692707ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:8000/api/jobs/eea01227120d4596bd017885e31fabc7/artifacts/main.cpp:0
+[  692707ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:8000/api/jobs/eea01227120d4596bd017885e31fabc7/artifacts/report.json:0
+[  692709ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:8000/api/jobs/eea01227120d4596bd017885e31fabc7/artifacts/solution.json:0

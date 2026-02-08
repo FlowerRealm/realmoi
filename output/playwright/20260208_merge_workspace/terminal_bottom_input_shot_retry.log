@@ -1,0 +1,15 @@
+### Result
+- [Screenshot of viewport](.playwright-cli/page-2026-02-08T00-44-40-351Z.png)
+### Ran Playwright code
+```js
+// Screenshot viewport and save it as .playwright-cli/page-2026-02-08T00-44-40-351Z.png
+await page.screenshot({
+path: '.playwright-cli/page-2026-02-08T00-44-40-351Z.png',
+  scale: 'css',
+  type: 'png'
+});
+```
+### Page
+- Page URL: http://127.0.0.1:3000/login
+- Page Title: realmoi
+- Console: 1 errors, 0 warnings

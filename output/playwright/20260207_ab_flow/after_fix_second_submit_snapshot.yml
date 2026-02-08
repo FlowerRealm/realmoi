@@ -1,0 +1,66 @@
+- generic [active] [ref=e1]:
+  - button "Open Next.js Dev Tools" [ref=e36] [cursor=pointer]:
+    - img [ref=e37]
+  - alert [ref=e40]
+  - banner [ref=e69]:
+    - generic [ref=e71]:
+      - link "Realm OI" [ref=e72] [cursor=pointer]:
+        - /url: /
+      - navigation [ref=e73]:
+        - link "助手" [ref=e74] [cursor=pointer]:
+          - /url: /
+        - link "账单" [ref=e75] [cursor=pointer]:
+          - /url: /billing
+        - link "设置" [ref=e76] [cursor=pointer]:
+          - /url: /settings/codex
+      - generic [ref=e77]:
+        - generic [ref=e78]:
+          - text: abflow_0817
+          - generic [ref=e79]: (user)
+        - button "退出" [ref=e80]
+  - generic [ref=e383]:
+    - generic [ref=e386]:
+      - generic [ref=e387]:
+        - generic [ref=e388]: R
+        - generic [ref=e389]: Realm
+      - generic [ref=e390]:
+        - generic [ref=e391]: 正在调试
+        - generic [ref=e393]:
+          - generic [ref=e394]: 当前 Job
+          - generic [ref=e395]: eea01227120d4596bd017885e31fabc7
+          - generic [ref=e396]: "status: running_generate"
+        - generic [ref=e397]:
+          - generic [ref=e398]: Runs
+          - button "eea01227120d4596bd017885e31fabc7 running_generate" [ref=e400]:
+            - generic [ref=e401]: eea01227120d4596bd017885e31fabc7
+            - generic [ref=e402]: running_generate
+        - button "Cancel Job" [ref=e404]:
+          - img [ref=e406]
+          - text: Cancel Job
+      - button "返回大厅" [ref=e409]:
+        - img [ref=e411]
+        - text: 返回大厅
+    - generic [ref=e413]:
+      - generic [ref=e414]:
+        - generic [ref=e418]: 已创建 Job：eea01227120d4596bd017885e31fabc7 正在启动并追踪终端输出…
+        - generic [ref=e421]:
+          - textbox "继续对话（会创建新 Job 进行修复/迭代）..." [ref=e422]
+          - button [disabled] [ref=e423]:
+            - img [ref=e424]
+      - generic [ref=e428]:
+        - generic [ref=e430]:
+          - button "TERMINAL" [ref=e431]
+          - button "STATUS" [ref=e432]
+          - button "CODE" [ref=e433]
+        - generic [ref=e442]:
+          - textbox "Terminal input" [ref=e443]
+          - generic:
+            - generic:
+              - generic: "[terminal] connecting… (job=eea01227120d4596bd017885e"
+            - generic:
+              - generic: 31fabc7)
+            - generic:
+              - generic: "[runner] MODE=generate"
+        - generic [ref=e445]:
+          - generic [ref=e446]: "status: running_generate"
+          - generic [ref=e447]: "model: model-route-channel"

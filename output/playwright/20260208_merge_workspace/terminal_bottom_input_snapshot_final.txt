@@ -1,0 +1,5 @@
+### Page
+- Page URL: http://127.0.0.1:3000/jobs/7cc096e666164658b30656da8f48a1d3
+- Page Title: realmoi
+### Snapshot
+- [Snapshot](.playwright-cli/page-2026-02-08T00-46-26-429Z.yml)

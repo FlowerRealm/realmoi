@@ -1,0 +1,77 @@
+[runner] MODE=generate
+2026-02-07T08:26:02.319524Z ERROR codex_api::endpoint::responses: error=http 400 Bad Request: Some("模型未启用\n")
+[codex] ERROR: 模型未启用
+
+[codex] turn.failed: 模型未启用
+
+Warning: no last agent message; wrote empty content to /job/output/artifacts/attempt_1/last_message_call_1.json
+2026-02-07T08:26:12.721856Z ERROR codex_api::endpoint::responses: error=http 400 Bad Request: Some("模型未启用\n")
+[codex] ERROR: 模型未启用
+
+[codex] turn.failed: 模型未启用
+
+Warning: no last agent message; wrote empty content to /job/output/artifacts/attempt_1/last_message_call_2.json
+2026-02-07T08:26:23.097356Z ERROR codex_api::endpoint::responses: error=http 400 Bad Request: Some("模型未启用\n")
+[codex] ERROR: 模型未启用
+
+[codex] turn.failed: 模型未启用
+
+Warning: no last agent message; wrote empty content to /job/output/artifacts/attempt_1/last_message_call_3.json
+[generate] infra retry 1 after 2s
+2026-02-07T08:26:35.518930Z ERROR codex_api::endpoint::responses: error=http 400 Bad Request: Some("模型未启用\n")
+[codex] ERROR: 模型未启用
+
+[codex] turn.failed: 模型未启用
+
+Warning: no last agent message; wrote empty content to /job/output/artifacts/attempt_1/last_message_call_4.json
+2026-02-07T08:26:45.914607Z ERROR codex_api::endpoint::responses: error=http 400 Bad Request: Some("模型未启用\n")
+[codex] ERROR: 模型未启用
+
+[codex] turn.failed: 模型未启用
+
+Warning: no last agent message; wrote empty content to /job/output/artifacts/attempt_1/last_message_call_5.json
+2026-02-07T08:26:56.313540Z ERROR codex_api::endpoint::responses: error=http 400 Bad Request: Some("模型未启用\n")
+[codex] ERROR: 模型未启用
+
+[codex] turn.failed: 模型未启用
+
+Warning: no last agent message; wrote empty content to /job/output/artifacts/attempt_1/last_message_call_6.json
+[generate] infra retry 2 after 5s
+2026-02-07T08:27:11.736324Z ERROR codex_api::endpoint::responses: error=http 400 Bad Request: Some("模型未启用\n")
+[codex] ERROR: 模型未启用
+
+[codex] turn.failed: 模型未启用
+
+Warning: no last agent message; wrote empty content to /job/output/artifacts/attempt_1/last_message_call_7.json
+2026-02-07T08:27:22.128995Z ERROR codex_api::endpoint::responses: error=http 400 Bad Request: Some("模型未启用\n")
+[codex] ERROR: 模型未启用
+
+[codex] turn.failed: 模型未启用
+
+Warning: no last agent message; wrote empty content to /job/output/artifacts/attempt_1/last_message_call_8.json
+2026-02-07T08:27:32.521758Z ERROR codex_api::endpoint::responses: error=http 400 Bad Request: Some("模型未启用\n")
+[codex] ERROR: 模型未启用
+
+[codex] turn.failed: 模型未启用
+
+Warning: no last agent message; wrote empty content to /job/output/artifacts/attempt_1/last_message_call_9.json
+[generate] infra retry 3 after 10s
+2026-02-07T08:27:53.103326Z ERROR codex_api::endpoint::responses: error=http 400 Bad Request: Some("模型未启用\n")
+[codex] ERROR: 模型未启用
+
+[codex] turn.failed: 模型未启用
+
+Warning: no last agent message; wrote empty content to /job/output/artifacts/attempt_1/last_message_call_10.json
+2026-02-07T08:28:03.476984Z ERROR codex_api::endpoint::responses: error=http 400 Bad Request: Some("模型未启用\n")
+[codex] ERROR: 模型未启用
+
+[codex] turn.failed: 模型未启用
+
+Warning: no last agent message; wrote empty content to /job/output/artifacts/attempt_1/last_message_call_11.json
+2026-02-07T08:28:13.876252Z ERROR codex_api::endpoint::responses: error=http 400 Bad Request: Some("模型未启用\n")
+[codex] ERROR: 模型未启用
+
+[codex] turn.failed: 模型未启用
+
+Warning: no last agent message; wrote empty content to /job/output/artifacts/attempt_1/last_message_call_12.json
+[generate] failed: codex_exit_1
