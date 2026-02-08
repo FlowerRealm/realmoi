@@ -3,10 +3,13 @@ name: realmoi
 services:
   backend:
     image: ${REALMOI_BACKEND_IMAGE:-realmoi/realmoi-backend}:${REALMOI_IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
     restart: unless-stopped
     environment:
       REALMOI_OPENAI_BASE_URL: ${REALMOI_OPENAI_BASE_URL:-https://api.openai.com}
-      REALMOI_OPENAI_API_KEY: ${REALMOI_OPENAI_API_KEY:?REALMOI_OPENAI_API_KEY is required}
+      REALMOI_OPENAI_API_KEY: ${REALMOI_OPENAI_API_KEY:-}
       REALMOI_JWT_SECRET: ${REALMOI_JWT_SECRET:-change-me}
       REALMOI_ALLOW_SIGNUP: ${REALMOI_ALLOW_SIGNUP:-1}
       REALMOI_ADMIN_USERNAME: ${REALMOI_ADMIN_USERNAME:-admin}
@@ -21,6 +24,11 @@ services:
 
   frontend:
     image: ${REALMOI_FRONTEND_IMAGE:-realmoi/realmoi-frontend}:${REALMOI_IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000/api}
     restart: unless-stopped
     depends_on:
       - backend

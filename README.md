@@ -13,11 +13,12 @@ OI/算法竞赛「调题助手」MVP：用户提交题面 +（可选）tests.zip
 
 ### 2.0 一键启动（推荐）
 
-在项目根目录创建 `.env`（git 已忽略），至少配置：
+在项目根目录创建 `.env`（git 已忽略），推荐配置：
 
 ```bash
-REALMOI_OPENAI_API_KEY="YOUR_KEY"
 REALMOI_OPENAI_BASE_URL="https://api.openai.com"
+# 可留空；也可以在管理后台按渠道配置
+REALMOI_OPENAI_API_KEY=""
 ```
 
 然后：
@@ -42,7 +43,8 @@ python3 -m venv .venv
 pip install -r backend/requirements.txt
 
 export REALMOI_OPENAI_BASE_URL="https://api.openai.com"
-export REALMOI_OPENAI_API_KEY="YOUR_KEY"
+# 可选：为空时可在管理后台新增上游渠道并填写 api_key
+export REALMOI_OPENAI_API_KEY=""
 # 可选：多上游渠道映射（按模型的 upstream_channel 路由）
 # export REALMOI_UPSTREAM_CHANNELS_JSON='{"openai-cn":{"base_url":"https://api.openai.com/v1","api_key":"YOUR_CN_KEY","models_path":"/v1/models"}}'
 export REALMOI_JWT_SECRET="change-me"
@@ -90,7 +92,7 @@ pytest
 
 ## 5. 实战测试：01 背包（E2E）
 
-前提：已配置上游 Key（`REALMOI_OPENAI_API_KEY`）与 Base URL，并已启动后端（推荐直接 `make dev`）。
+前提：已配置可用上游渠道（`REALMOI_OPENAI_API_KEY` 或管理后台渠道 `api_key`）与 Base URL，并已启动后端（推荐直接 `make dev`）。
 
 然后在另一个终端执行：
 
@@ -108,7 +110,7 @@ make e2e-knapsack
 
 ```bash
 cp .env.docker.example .env
-# 编辑 .env，至少设置 REALMOI_OPENAI_API_KEY
+# 编辑 .env（REALMOI_OPENAI_API_KEY 可留空）
 ```
 
 ### 6.2 拉取并启动
@@ -117,6 +119,33 @@ cp .env.docker.example .env
 docker compose pull
 docker compose up -d
 ```
+
+### 6.3 本地构建并启动（不依赖镜像仓库）
+
+方式 A（推荐，一条命令）：
+
+```bash
+make docker-up-local
+```
+
+方式 B（手动）：
+
+```bash
+# 先构建 runner（后端创建任务容器时会用到这个镜像）
+docker build -t realmoi/realmoi-runner:latest runner
+
+# 再构建 backend/frontend 并启动
+docker compose build backend frontend
+docker compose up -d --no-build
+```
+
+说明：
+- `docker-compose.yml` 已支持 `build`（backend/frontend），因此可以直接本地构建。
+- 若你希望使用自定义镜像名，可在 `.env` 设置：
+  - `REALMOI_RUNNER_IMAGE=your-namespace/realmoi-runner:local`
+  - `REALMOI_BACKEND_IMAGE=your-namespace/realmoi-backend`
+  - `REALMOI_FRONTEND_IMAGE=your-namespace/realmoi-frontend`
+  - `REALMOI_IMAGE_TAG=local`
 
 默认访问：
 - 前端：`http://localhost:3000`

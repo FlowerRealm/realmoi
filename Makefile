@@ -24,18 +24,34 @@ help:
 	@echo "  make dev            Start backend + frontend (dev)"
 	@echo "  make test           Run backend tests (pytest)"
 	@echo "  make runner-build   Build runner docker image"
+	@echo "  make docker-build-local  Build backend/frontend/runner images locally"
+	@echo "  make docker-up-local     Local build + docker compose up -d (no pull)"
 	@echo "  make e2e-knapsack   End-to-end knapsack test (requires running backend + valid upstream key)"
 	@echo "  make backend-deps   Create venv + install backend deps"
 	@echo "  make frontend-deps  Install frontend deps"
 	@echo ""
 	@echo "Notes:"
 	@echo "  - Put secrets/config into .env (ignored by git) or export env vars before running."
-	@echo "  - Required for real Codex runs: REALMOI_OPENAI_API_KEY."
+	@echo "  - Required for real Codex runs: valid upstream API key (env or admin channel config)."
 
 .PHONY: runner-build
 runner-build:
 	echo "[make] building runner image: $(RUNNER_IMAGE)"
 	docker build -t "$(RUNNER_IMAGE)" "runner"
+
+.PHONY: docker-build-local
+docker-build-local:
+	$(LOAD_ENV)
+	export REALMOI_RUNNER_IMAGE="$${REALMOI_RUNNER_IMAGE:-realmoi/realmoi-runner:latest}"
+	echo "[make] building local runner image: $${REALMOI_RUNNER_IMAGE}"
+	docker build -t "$${REALMOI_RUNNER_IMAGE}" "runner"
+	echo "[make] building local backend/frontend images via docker compose"
+	docker compose build backend frontend
+
+.PHONY: docker-up-local
+docker-up-local: docker-build-local
+	echo "[make] starting stack from locally built images"
+	docker compose up -d --no-build
 
 .PHONY: backend-deps
 backend-deps:
