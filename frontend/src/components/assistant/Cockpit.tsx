@@ -92,26 +92,20 @@ function stageLabelZh(stage: string): string {
 }
 
 function parseStatusUpdateLine(line: string): string | null {
+  if (!line.startsWith("[status]")) {
+    return null;
+  }
+
   let stage = "";
   let summary = "";
-
-  if (line.includes("status_update(")) {
-    const stageMatch = line.match(/stage=(['"])(.*?)\1/);
-    const summaryMatch = line.match(/summary=(['"])(.*?)\1/);
-    stage = (stageMatch?.[2] ?? "").trim();
-    summary = (summaryMatch?.[2] ?? "").trim();
-  } else if (line.startsWith("[status]")) {
-    const stageSummaryFormat = line.match(/\[status\]\s*stage=([A-Za-z_]+)\s+summary=(.+)$/);
-    const legacyFormat = line.match(/\[status\]\s*([A-Za-z_]+)\s*:\s*(.+)$/);
-    if (stageSummaryFormat) {
-      stage = (stageSummaryFormat[1] ?? "").trim();
-      summary = (stageSummaryFormat[2] ?? "").trim();
-    } else if (legacyFormat) {
-      stage = (legacyFormat[1] ?? "").trim();
-      summary = (legacyFormat[2] ?? "").trim();
-    } else {
-      return null;
-    }
+  const stageSummaryFormat = line.match(/\[status\]\s*stage=([A-Za-z_]+)\s+summary=(.+)$/);
+  const legacyFormat = line.match(/\[status\]\s*([A-Za-z_]+)\s*:\s*(.+)$/);
+  if (stageSummaryFormat) {
+    stage = (stageSummaryFormat[1] ?? "").trim();
+    summary = (stageSummaryFormat[2] ?? "").trim();
+  } else if (legacyFormat) {
+    stage = (legacyFormat[1] ?? "").trim();
+    summary = (legacyFormat[2] ?? "").trim();
   } else {
     return null;
   }
@@ -149,18 +143,13 @@ function cleanTokenText(text: string): string {
       continue;
     }
     if (inHereDoc) {
-      const hereDocThought = parseStatusUpdateLine(line);
-      if (hereDocThought) {
-        kept.push(hereDocThought);
-        continue;
-      }
       if (line === "PY" || line === "PY'" || line === 'PY"') {
         inHereDoc = false;
       }
       continue;
     }
-    if (line.startsWith("from runner_generate import status_update")) continue;
     if (line.startsWith("status_update(")) continue;
+    if (line.startsWith("from runner_generate import status_update")) continue;
     if (line === "PY" || line === "PY'" || line === 'PY"') continue;
     kept.push(raw);
   }
