@@ -2,9 +2,58 @@
 
 import { getToken, clearToken } from "./auth";
 
-export const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ||
-  "http://localhost:8000/api";
+const DEFAULT_API_BASE = "http://0.0.0.0:8000/api";
+
+function trimTrailingSlash(value: string): string {
+  return value.replace(/\/$/, "");
+}
+
+function isLoopbackHost(hostname: string): boolean {
+  return (
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname === "::1" ||
+    hostname === "[::1]" ||
+    hostname.endsWith(".localhost")
+  );
+}
+
+function shouldUseConfiguredBase(configuredBase: string): boolean {
+  if (typeof window === "undefined") return true;
+  try {
+    const configuredHost = new URL(configuredBase, window.location.origin).hostname;
+    const currentHost = window.location.hostname;
+    if (isLoopbackHost(configuredHost) && !isLoopbackHost(currentHost)) {
+      return false;
+    }
+  } catch {
+    return true;
+  }
+  return true;
+}
+
+function resolveRuntimeApiBase(): string {
+  if (typeof window === "undefined") {
+    return DEFAULT_API_BASE;
+  }
+  const target = new URL(window.location.origin);
+  target.port = process.env.NEXT_PUBLIC_API_PORT?.trim() || "8000";
+  target.pathname = "/api";
+  target.search = "";
+  target.hash = "";
+  return trimTrailingSlash(target.toString());
+}
+
+export const API_BASE = (() => {
+  const configuredBase = process.env.NEXT_PUBLIC_API_BASE_URL?.trim();
+  if (configuredBase) {
+    if (shouldUseConfiguredBase(configuredBase)) {
+      return trimTrailingSlash(configuredBase);
+    }
+    return resolveRuntimeApiBase();
+  }
+  return trimTrailingSlash(DEFAULT_API_BASE);
+})();
 
 export class ApiError extends Error {
   code: string;

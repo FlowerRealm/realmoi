@@ -58,9 +58,13 @@ uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
 ```bash
 cd frontend
 npm install
-export NEXT_PUBLIC_API_BASE_URL="http://localhost:8000/api"
+# 可选：显式指定后端地址（默认值为 http://0.0.0.0:8000/api）
+export NEXT_PUBLIC_API_BASE_URL="http://0.0.0.0:8000/api"
 npm run dev
 ```
+
+说明：
+- 若显式配置为 `localhost/127.0.0.1` 且前端为外网访问，前端会自动回退到“当前访问主机:8000/api”。
 
 访问入口：
 - 主页（新调题助手 UI）：`http://localhost:3000/`
