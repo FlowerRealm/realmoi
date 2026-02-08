@@ -23,7 +23,7 @@ jobs:
             dockerfile: Dockerfile.frontend
           - image_name: realmoi-runner
             build_context: runner
-            dockerfile: Dockerfile
+            dockerfile: runner/Dockerfile
 
     steps:
       - name: Checkout
