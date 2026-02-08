@@ -25,8 +25,26 @@ class ContainerRef:
     name: str
 
 
+_IMAGE_PULL_LOCK = threading.Lock()
+_READY_IMAGES: set[str] = set()
+
+
 def docker_client() -> docker.DockerClient:
     return docker.from_env(timeout=SETTINGS.docker_api_timeout_seconds)
+
+
+def ensure_image_ready(*, client: docker.DockerClient, image: str) -> None:
+    if image in _READY_IMAGES:
+        return
+
+    with _IMAGE_PULL_LOCK:
+        if image in _READY_IMAGES:
+            return
+        try:
+            client.images.get(image)
+        except docker.errors.ImageNotFound:
+            client.images.pull(image)
+        _READY_IMAGES.add(image)
 
 
 def _make_tar(files: dict[str, bytes]) -> bytes:
@@ -162,6 +180,7 @@ def create_generate_container(
     pids_limit: int,
     extra_env: dict[str, str] | None = None,
 ) -> Container:
+    ensure_image_ready(client=client, image=SETTINGS.runner_image)
     name = f"realmoi_{job_id}_generate_a{attempt}"
     job_dir_abs = str(job_dir.resolve())
     user = f"{os.getuid()}:{os.getgid()}"
@@ -210,6 +229,7 @@ def create_test_container(
     pids_limit: int,
     extra_env: dict[str, str] | None = None,
 ) -> Container:
+    ensure_image_ready(client=client, image=SETTINGS.runner_image)
     name = f"realmoi_{job_id}_test_a{attempt}"
     job_dir_abs = str(job_dir.resolve())
     output_dir_abs = str((job_dir / "output").resolve())

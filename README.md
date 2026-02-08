@@ -101,3 +101,47 @@ make e2e-knapsack
 说明：
 - 默认使用 `gpt-5.2-codex`（可用 `REALMOI_E2E_MODEL` 覆盖）
 - 默认 `search_mode=disabled`（避免不必要的检索开销）
+
+## 6. Docker 部署（直接拉取镜像）
+
+### 6.1 准备环境变量
+
+```bash
+cp .env.docker.example .env
+# 编辑 .env，至少设置 REALMOI_OPENAI_API_KEY
+```
+
+### 6.2 拉取并启动
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+默认访问：
+- 前端：`http://localhost:3000`
+- 后端 API：`http://localhost:8000/api`
+
+说明：
+- `backend` 容器会挂载 `/var/run/docker.sock`，用于按需创建 `REALMOI_RUNNER_IMAGE` 对应的 runner 容器。
+- 若本地没有 runner 镜像，后端会在首次任务创建时自动 pull `REALMOI_RUNNER_IMAGE`。
+- 默认镜像名：
+  - `realmoi/realmoi-backend:latest`
+  - `realmoi/realmoi-frontend:latest`
+  - `realmoi/realmoi-runner:latest`
+  可通过 `.env` 覆盖为你自己的命名空间。
+
+## 7. GitHub Tag 自动发布 Docker 镜像
+
+仓库已提供工作流：`.github/workflows/docker-release.yml`
+
+触发方式：
+- 推送 tag（如 `v0.3.0`）自动构建并推送 3 个镜像（backend/frontend/runner）
+- 也支持 `workflow_dispatch` 手动触发
+
+需要在 GitHub Secrets 中配置：
+- `DOCKERHUB_USERNAME`
+- `DOCKERHUB_TOKEN`（Docker Hub Access Token）
+
+可选 GitHub Variables：
+- `DOCKERHUB_NAMESPACE`（不设置时默认使用 `DOCKERHUB_USERNAME` 作为命名空间）
