@@ -2,7 +2,7 @@ FROM node:22-bookworm-slim
 
 ARG CODEX_VERSION=0.92.0
 ARG USE_CN_MIRROR=1
-ARG APT_MIRROR=https://mirrors.ustc.edu.cn
+ARG APT_MIRROR=http://mirrors.aliyun.com
 ARG NPM_REGISTRY=https://registry.npmmirror.com
 
 RUN if [ "${USE_CN_MIRROR}" = "1" ] && [ -n "${APT_MIRROR}" ]; then \

@@ -150,9 +150,9 @@ docker compose up -d --no-build
 ### 6.4 构建内置国内源（可关闭/可覆盖）
 
 项目已内置构建镜像源，无需手动 `export`：
-- `pip` 默认：`https://pypi.tuna.tsinghua.edu.cn/simple`
+- `pip` 默认：`https://mirrors.aliyun.com/pypi/simple`
 - `npm` 默认：`https://registry.npmmirror.com`
-- `apt` 默认：`https://mirrors.ustc.edu.cn`
+- `apt` 默认：`http://mirrors.aliyun.com`
 
 默认直接执行即可：
 
@@ -169,9 +169,9 @@ REALMOI_BUILD_USE_CN_MIRROR=0 make docker-up-local
 如需替换为你自己的镜像：
 
 ```bash
-REALMOI_BUILD_PIP_INDEX_URL="https://pypi.tuna.tsinghua.edu.cn/simple" \
+REALMOI_BUILD_PIP_INDEX_URL="https://mirrors.aliyun.com/pypi/simple" \
 REALMOI_BUILD_NPM_REGISTRY="https://registry.npmmirror.com" \
-REALMOI_BUILD_APT_MIRROR="https://mirrors.ustc.edu.cn" \
+REALMOI_BUILD_APT_MIRROR="http://mirrors.aliyun.com" \
 make docker-build-local
 ```
 

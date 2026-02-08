@@ -8,7 +8,7 @@ WORKDIR /app
 
 COPY backend/requirements.txt /app/backend/requirements.txt
 ARG USE_CN_MIRROR=1
-ARG PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+ARG PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple
 RUN if [ "${USE_CN_MIRROR}" = "1" ] && [ -n "${PIP_INDEX_URL}" ]; then \
       pip install --no-cache-dir -i "${PIP_INDEX_URL}" -r /app/backend/requirements.txt; \
     else \

@@ -10,9 +10,9 @@ BACKEND_HOST ?= 0.0.0.0
 BACKEND_PORT ?= 8000
 FRONTEND_PORT ?= 3000
 REALMOI_BUILD_USE_CN_MIRROR ?= 1
-REALMOI_BUILD_PIP_INDEX_URL ?= https://pypi.tuna.tsinghua.edu.cn/simple
+REALMOI_BUILD_PIP_INDEX_URL ?= https://mirrors.aliyun.com/pypi/simple
 REALMOI_BUILD_NPM_REGISTRY ?= https://registry.npmmirror.com
-REALMOI_BUILD_APT_MIRROR ?= https://mirrors.ustc.edu.cn
+REALMOI_BUILD_APT_MIRROR ?= http://mirrors.aliyun.com
 
 define LOAD_ENV
 set -a
