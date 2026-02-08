@@ -137,7 +137,6 @@ docker compose up -d
 
 触发方式：
 - 推送 tag（如 `v0.3.0`）自动构建并推送 3 个镜像（backend/frontend/runner）
-- 也支持 `workflow_dispatch` 手动触发
 
 需要在 GitHub Secrets 中配置：
 - `DOCKERHUB_USERNAME`
