@@ -7,7 +7,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 COPY backend/requirements.txt /app/backend/requirements.txt
-RUN pip install --no-cache-dir -r /app/backend/requirements.txt
+ARG USE_CN_MIRROR=1
+ARG PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+RUN if [ "${USE_CN_MIRROR}" = "1" ] && [ -n "${PIP_INDEX_URL}" ]; then \
+      pip install --no-cache-dir -i "${PIP_INDEX_URL}" -r /app/backend/requirements.txt; \
+    else \
+      pip install --no-cache-dir -r /app/backend/requirements.txt; \
+    fi
 
 COPY backend /app/backend
 

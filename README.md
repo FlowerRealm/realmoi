@@ -147,6 +147,34 @@ docker compose up -d --no-build
   - `REALMOI_FRONTEND_IMAGE=your-namespace/realmoi-frontend`
   - `REALMOI_IMAGE_TAG=local`
 
+### 6.4 构建内置国内源（可关闭/可覆盖）
+
+项目已内置构建镜像源，无需手动 `export`：
+- `pip` 默认：`https://pypi.tuna.tsinghua.edu.cn/simple`
+- `npm` 默认：`https://registry.npmmirror.com`
+- `apt` 默认：`https://mirrors.ustc.edu.cn`
+
+默认直接执行即可：
+
+```bash
+make docker-up-local
+```
+
+如需关闭国内源（回退官方源）：
+
+```bash
+REALMOI_BUILD_USE_CN_MIRROR=0 make docker-up-local
+```
+
+如需替换为你自己的镜像：
+
+```bash
+REALMOI_BUILD_PIP_INDEX_URL="https://pypi.tuna.tsinghua.edu.cn/simple" \
+REALMOI_BUILD_NPM_REGISTRY="https://registry.npmmirror.com" \
+REALMOI_BUILD_APT_MIRROR="https://mirrors.ustc.edu.cn" \
+make docker-build-local
+```
+
 默认访问：
 - 前端：`http://localhost:3000`
 - 后端 API：`http://localhost:8000/api`

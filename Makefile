@@ -9,6 +9,10 @@ RUNNER_IMAGE ?= realmoi-runner:dev
 BACKEND_HOST ?= 0.0.0.0
 BACKEND_PORT ?= 8000
 FRONTEND_PORT ?= 3000
+REALMOI_BUILD_USE_CN_MIRROR ?= 1
+REALMOI_BUILD_PIP_INDEX_URL ?= https://pypi.tuna.tsinghua.edu.cn/simple
+REALMOI_BUILD_NPM_REGISTRY ?= https://registry.npmmirror.com
+REALMOI_BUILD_APT_MIRROR ?= https://mirrors.ustc.edu.cn
 
 define LOAD_ENV
 set -a
@@ -32,19 +36,42 @@ help:
 	@echo ""
 	@echo "Notes:"
 	@echo "  - Put secrets/config into .env (ignored by git) or export env vars before running."
+	@echo "  - Built-in CN mirrors are enabled by default. Use REALMOI_BUILD_USE_CN_MIRROR=0 to disable."
+	@echo "  - Mirror overrides: REALMOI_BUILD_PIP_INDEX_URL / REALMOI_BUILD_NPM_REGISTRY / REALMOI_BUILD_APT_MIRROR."
 	@echo "  - Required for real Codex runs: valid upstream API key (env or admin channel config)."
 
 .PHONY: runner-build
 runner-build:
+	$(LOAD_ENV)
+	BUILD_ARGS=()
+	BUILD_ARGS+=(--build-arg "USE_CN_MIRROR=$${REALMOI_BUILD_USE_CN_MIRROR:-1}")
+	if [[ -n "$${REALMOI_BUILD_NPM_REGISTRY:-}" ]]; then
+	  BUILD_ARGS+=(--build-arg "NPM_REGISTRY=$${REALMOI_BUILD_NPM_REGISTRY}")
+	fi
+	if [[ -n "$${REALMOI_BUILD_APT_MIRROR:-}" ]]; then
+	  BUILD_ARGS+=(--build-arg "APT_MIRROR=$${REALMOI_BUILD_APT_MIRROR}")
+	fi
 	echo "[make] building runner image: $(RUNNER_IMAGE)"
-	docker build -t "$(RUNNER_IMAGE)" "runner"
+	docker build "$${BUILD_ARGS[@]}" -t "$(RUNNER_IMAGE)" "runner"
 
 .PHONY: docker-build-local
 docker-build-local:
 	$(LOAD_ENV)
 	export REALMOI_RUNNER_IMAGE="$${REALMOI_RUNNER_IMAGE:-realmoi/realmoi-runner:latest}"
+	export REALMOI_BUILD_USE_CN_MIRROR="$${REALMOI_BUILD_USE_CN_MIRROR:-1}"
+	export REALMOI_BUILD_PIP_INDEX_URL="$${REALMOI_BUILD_PIP_INDEX_URL:-}"
+	export REALMOI_BUILD_NPM_REGISTRY="$${REALMOI_BUILD_NPM_REGISTRY:-}"
+	export REALMOI_BUILD_APT_MIRROR="$${REALMOI_BUILD_APT_MIRROR:-}"
+	BUILD_ARGS=()
+	BUILD_ARGS+=(--build-arg "USE_CN_MIRROR=$${REALMOI_BUILD_USE_CN_MIRROR:-1}")
+	if [[ -n "$${REALMOI_BUILD_NPM_REGISTRY:-}" ]]; then
+	  BUILD_ARGS+=(--build-arg "NPM_REGISTRY=$${REALMOI_BUILD_NPM_REGISTRY}")
+	fi
+	if [[ -n "$${REALMOI_BUILD_APT_MIRROR:-}" ]]; then
+	  BUILD_ARGS+=(--build-arg "APT_MIRROR=$${REALMOI_BUILD_APT_MIRROR}")
+	fi
 	echo "[make] building local runner image: $${REALMOI_RUNNER_IMAGE}"
-	docker build -t "$${REALMOI_RUNNER_IMAGE}" "runner"
+	docker build "$${BUILD_ARGS[@]}" -t "$${REALMOI_RUNNER_IMAGE}" "runner"
 	echo "[make] building local backend/frontend images via docker compose"
 	docker compose build backend frontend
 

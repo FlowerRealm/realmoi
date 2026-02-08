@@ -6,6 +6,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.backend
+      args:
+        USE_CN_MIRROR: ${REALMOI_BUILD_USE_CN_MIRROR:-1}
+        PIP_INDEX_URL: ${REALMOI_BUILD_PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
     restart: unless-stopped
     environment:
       REALMOI_OPENAI_BASE_URL: ${REALMOI_OPENAI_BASE_URL:-https://api.openai.com}
@@ -29,6 +32,8 @@ services:
       dockerfile: Dockerfile.frontend
       args:
         NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000/api}
+        USE_CN_MIRROR: ${REALMOI_BUILD_USE_CN_MIRROR:-1}
+        NPM_REGISTRY: ${REALMOI_BUILD_NPM_REGISTRY:-https://registry.npmmirror.com}
     restart: unless-stopped
     depends_on:
       - backend
