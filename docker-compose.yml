@@ -17,6 +17,7 @@ services:
       REALMOI_ALLOW_SIGNUP: ${REALMOI_ALLOW_SIGNUP:-1}
       REALMOI_ADMIN_USERNAME: ${REALMOI_ADMIN_USERNAME:-admin}
       REALMOI_ADMIN_PASSWORD: ${REALMOI_ADMIN_PASSWORD:-admin-password-123}
+      REALMOI_RUNNER_EXECUTOR: ${REALMOI_RUNNER_EXECUTOR:-docker}
       REALMOI_RUNNER_IMAGE: ${REALMOI_RUNNER_IMAGE:-realmoi/realmoi-runner:latest}
     volumes:
       - realmoi_data:/app/data

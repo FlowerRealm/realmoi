@@ -11,10 +11,17 @@ from typing import Any, Literal, cast
 
 ReasoningEffort = Literal["low", "medium", "high", "xhigh"]
 REASONING_EFFORT_VALUES: set[str] = {"low", "medium", "high", "xhigh"}
+JOB_DIR = Path(os.environ.get("REALMOI_JOB_DIR") or "/job")
+SCHEMA_PATH = Path(os.environ.get("REALMOI_SCHEMA_PATH") or "/app/schemas/codex_output_schema.json")
+TEST_SCRIPT_HINT = os.environ.get("REALMOI_TEST_SCRIPT_HINT") or "/app/runner_test.py"
+
+
+def job_path(*parts: str) -> Path:
+    return JOB_DIR.joinpath(*parts)
 
 
 def read_job() -> dict[str, Any]:
-    return json.loads(Path("/job/input/job.json").read_text(encoding="utf-8"))
+    return json.loads(job_path("input", "job.json").read_text(encoding="utf-8"))
 
 
 def ensure_dir(p: Path) -> None:
@@ -143,12 +150,12 @@ def status_update(*, stage: str, summary: str, level: str = "info", progress: in
     job_id = ""
     attempt = int(os.environ.get("ATTEMPT") or 1)
     try:
-        job = json.loads(Path("/job/input/job.json").read_text(encoding="utf-8"))
+        job = json.loads(job_path("input", "job.json").read_text(encoding="utf-8"))
         job_id = str(job.get("job_id") or "")
     except Exception:
         job_id = ""
 
-    log_path = Path("/job/logs/agent_status.jsonl")
+    log_path = job_path("logs", "agent_status.jsonl")
     log_path.parent.mkdir(parents=True, exist_ok=True)
     if _STATUS_SEQ is None:
         _STATUS_SEQ = _read_last_seq(log_path)
@@ -209,8 +216,8 @@ def build_prompt_generate(job: dict[str, Any]) -> str:
 6. `solution_idea`、`seed_code_idea`、`seed_code_bug_reason` 这三个说明字段必须使用中文输出。
 
 强烈建议（为了“一次性通过”）：
-- 如果存在 `/job/input/tests/`，请在生成 main_cpp 后自行在容器内编译并跑完全部 tests 进行自检。
-  - 你可以直接运行：`python3 -X utf8 /app/runner_test.py`（它会读取 `/job/input/job.json` 与 `/job/output/main.cpp`，并在 `/job/output/artifacts/attempt_$ATTEMPT/test_output/report.json` 输出结构化结果）。
+- 如果存在 tests，请在生成 main_cpp 后自行编译并跑完全部 tests 进行自检。
+  - 你可以直接运行：`python3 -X utf8 {TEST_SCRIPT_HINT}`（会读取当前 job 的输入与输出目录，并生成结构化 report.json）。
   - 若发现不通过，请在本轮内反复修正后再输出最终 JSON（不要把修正过程写进最终输出）。
 
 请在关键节点写入 Job 状态（summary ≤200 字符），用于前端“状态”页实时展示：
@@ -245,7 +252,7 @@ def build_prompt_repair(job: dict[str, Any], report_summary: str, current_main_c
 4. `solution_idea`、`seed_code_idea`、`seed_code_bug_reason` 这三个说明字段必须使用中文输出。
 
 强烈建议：
-- 修复后在容器内重新编译并跑完全部 tests 自检：`python3 -X utf8 /app/runner_test.py`，确保 `report.status == succeeded`。
+- 修复后重新编译并跑完全部 tests 自检：`python3 -X utf8 {TEST_SCRIPT_HINT}`，确保 `report.status == succeeded`。
 
 请在修复开始时写一次状态 `stage=repair`，修复完成输出前写 `stage=done`（summary ≤200 字符）。
 
@@ -423,11 +430,11 @@ def main() -> int:
     maybe_set_openai_api_key_from_auth_json()
     status_update(stage="analysis", summary="开始生成（Codex）")
 
-    out_dir = Path("/job/output")
+    out_dir = job_path("output")
     attempt_dir = out_dir / "artifacts" / f"attempt_{attempt}"
     ensure_dir(attempt_dir)
 
-    schema_path = Path("/app/schemas/codex_output_schema.json")
+    schema_path = SCHEMA_PATH
 
     if os.environ.get("MOCK_MODE") == "1":
         main_cpp = r"""#include <bits/stdc++.h>
@@ -461,8 +468,10 @@ int main(){ios::sync_with_stdio(false);cin.tie(nullptr);return 0;}
         return 0
 
     if prompt_mode == "repair":
-        report_path = Path("/job/output/report.json")
-        current_main_cpp = (Path("/job/output/main.cpp").read_text(encoding="utf-8") if Path("/job/output/main.cpp").exists() else "")
+        report_path = job_path("output", "report.json")
+        current_main_cpp = (
+            job_path("output", "main.cpp").read_text(encoding="utf-8") if job_path("output", "main.cpp").exists() else ""
+        )
         prompt = build_prompt_repair(job, summarize_report(report_path), current_main_cpp)
     else:
         prompt = build_prompt_generate(job)

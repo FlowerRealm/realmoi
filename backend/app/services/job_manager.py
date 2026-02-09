@@ -1,30 +1,32 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import threading
-import time
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import select
-
 from ..db import SessionLocal
-from ..models import ModelPricing, UsageRecord, UserCodexSettings
+from ..models import ModelPricing, UserCodexSettings
 from ..services.codex_config import build_effective_config
 from ..services.docker_service import create_generate_container, create_test_container, docker_client, put_files, start_log_collector
 from ..services.job_paths import JobPaths, get_job_paths
 from ..services.job_state import iso_after_days, load_state, now_iso, save_state
-from ..services.pricing import Pricing, TokenUsage, compute_cost_microusd
+from ..services.local_runner import run_local_runner, stop_process_tree
 from ..services.upstream_channels import resolve_upstream_target
+from ..services.usage_records import ingest_usage_record
 from ..settings import SETTINGS
 
 
 class JobManager:
     def __init__(self, *, jobs_root: Path):
         self._jobs_root = jobs_root
-        self._client = docker_client()
+        executor = str(SETTINGS.runner_executor or "local").strip().lower()
+        self._runner_executor = executor if executor in {"local", "docker"} else "local"
+        self._client = docker_client() if self._runner_executor == "docker" else None
         self._lock = threading.Lock()
         self._threads: dict[str, threading.Thread] = {}
+        self._local_procs: dict[str, dict[str, subprocess.Popen[bytes]]] = {}
 
     def reconcile(self) -> None:
         for p in self._jobs_root.iterdir():
@@ -39,8 +41,26 @@ class JobManager:
                 continue
             if state.get("status") not in ("running_generate", "running_test"):
                 continue
-            # If container is gone or exited, mark failed.
             stage = "generate" if state.get("status") == "running_generate" else "test"
+            if self._runner_executor != "docker":
+                state["status"] = "failed"
+                state["finished_at"] = now_iso()
+                state["expires_at"] = iso_after_days(7)
+                state["error"] = {
+                    "code": "local_process_missing",
+                    "message": f"Local {stage} process missing after restart",
+                }
+                save_state(state_path, state)
+                continue
+
+            if self._client is None:
+                state["status"] = "failed"
+                state["finished_at"] = now_iso()
+                state["expires_at"] = iso_after_days(7)
+                state["error"] = {"code": "docker_unavailable", "message": "Docker executor unavailable"}
+                save_state(state_path, state)
+                continue
+
             cinfo = (state.get("containers") or {}).get(stage) or {}
             cid = cinfo.get("id")
             if not cid:
@@ -103,15 +123,21 @@ class JobManager:
             if status in ("cancelled", "succeeded", "failed"):
                 return state
 
-            for stage in ("generate", "test"):
-                cinfo = (state.get("containers") or {}).get(stage) or {}
-                cid = cinfo.get("id")
-                if cid:
+            if self._runner_executor == "docker":
+                for stage in ("generate", "test"):
+                    cinfo = (state.get("containers") or {}).get(stage) or {}
+                    cid = cinfo.get("id")
+                    if not cid or self._client is None:
+                        continue
                     try:
                         c = self._client.containers.get(cid)
                         c.stop(timeout=3)
                     except Exception:
                         pass
+            else:
+                stage_procs = self._local_procs.pop(job_id, {})
+                for proc in stage_procs.values():
+                    stop_process_tree(proc)
 
             state["status"] = "cancelled"
             state["finished_at"] = now_iso()
@@ -119,6 +145,27 @@ class JobManager:
             state["error"] = {"code": "cancelled", "message": "Cancelled"}
             save_state(paths.state_json, state)
             return state
+
+    def _project_root(self) -> Path:
+        return Path(__file__).resolve().parents[3]
+
+    def _resolve_runner_path(self, configured_path: str) -> Path:
+        path = Path(configured_path)
+        if path.is_absolute():
+            return path
+        return self._project_root() / path
+
+    def _remember_local_process(self, *, job_id: str, stage: str, process: subprocess.Popen[bytes]) -> None:
+        with self._lock:
+            stage_map = self._local_procs.setdefault(job_id, {})
+            stage_map[stage] = process
+
+    def _forget_local_process(self, *, job_id: str, stage: str) -> None:
+        with self._lock:
+            stage_map = self._local_procs.get(job_id) or {}
+            stage_map.pop(stage, None)
+            if not stage_map:
+                self._local_procs.pop(job_id, None)
 
     def _run_job_thread(self, *, job_id: str, owner_user_id: str) -> None:
         paths = get_job_paths(jobs_root=self._jobs_root, job_id=job_id)
@@ -217,32 +264,88 @@ class JobManager:
         if SETTINGS.mock_mode:
             extra_env["MOCK_MODE"] = "1"
 
-        container = create_generate_container(
-            client=self._client,
-            job_id=paths.root.name,
-            owner_user_id=owner_user_id,
-            attempt=attempt,
-            job_dir=paths.root,
-            cpus=cpus,
-            memory_mb=memory_mb,
-            pids_limit=pids_limit,
-            extra_env=extra_env,
-        )
-
         state.setdefault("containers", {})
-        state["containers"]["generate"] = {"id": container.id, "name": container.name, "exit_code": None, "attempt": attempt}
-        save_state(paths.state_json, state)
+        if self._runner_executor == "docker":
+            if self._client is None:
+                raise RuntimeError("docker_unavailable")
+            container = create_generate_container(
+                client=self._client,
+                job_id=paths.root.name,
+                owner_user_id=owner_user_id,
+                attempt=attempt,
+                job_dir=paths.root,
+                cpus=cpus,
+                memory_mb=memory_mb,
+                pids_limit=pids_limit,
+                extra_env=extra_env,
+            )
 
-        put_files(
-            container,
-            dest_dir="/codex_home",
-            files={"config.toml": cfg.effective_config_toml.encode("utf-8"), "auth.json": auth_bytes},
-        )
+            state["containers"]["generate"] = {
+                "id": container.id,
+                "name": container.name,
+                "exit_code": None,
+                "attempt": attempt,
+            }
+            save_state(paths.state_json, state)
 
-        start_log_collector(container=container, log_path=paths.terminal_log, max_bytes=max_terminal, redact_secrets=[secret])
-        container.start()
-        res = container.wait()
-        exit_code = int(res.get("StatusCode") or 0)
+            put_files(
+                container,
+                dest_dir="/codex_home",
+                files={"config.toml": cfg.effective_config_toml.encode("utf-8"), "auth.json": auth_bytes},
+            )
+
+            start_log_collector(
+                container=container,
+                log_path=paths.terminal_log,
+                max_bytes=max_terminal,
+                redact_secrets=[secret],
+            )
+            container.start()
+            res = container.wait()
+            exit_code = int(res.get("StatusCode") or 0)
+        else:
+            script_path = self._resolve_runner_path(SETTINGS.runner_generate_script)
+            schema_path = self._resolve_runner_path(SETTINGS.runner_schema_path)
+            test_script_hint = self._resolve_runner_path(SETTINGS.runner_test_script)
+            codex_home = paths.root / ".codex_home"
+            codex_home.mkdir(parents=True, exist_ok=True)
+            (codex_home / "config.toml").write_text(cfg.effective_config_toml, encoding="utf-8")
+            (codex_home / "auth.json").write_bytes(auth_bytes)
+
+            state["containers"]["generate"] = {
+                "id": f"local-generate-attempt-{attempt}",
+                "name": script_path.name,
+                "exit_code": None,
+                "attempt": attempt,
+            }
+            save_state(paths.state_json, state)
+
+            local_env = {
+                **extra_env,
+                "CODEX_HOME": str(codex_home.resolve()),
+                "REALMOI_JOB_DIR": str(paths.root.resolve()),
+                "REALMOI_SCHEMA_PATH": str(schema_path.resolve()),
+                "REALMOI_TEST_SCRIPT_HINT": str(test_script_hint.resolve()),
+            }
+            exit_code, pid = run_local_runner(
+                script_path=script_path.resolve(),
+                env=local_env,
+                log_path=paths.terminal_log,
+                max_bytes=max_terminal,
+                redact_secrets=[secret],
+                on_started=lambda proc: self._remember_local_process(
+                    job_id=paths.root.name,
+                    stage="generate",
+                    process=proc,
+                ),
+                on_finished=lambda: self._forget_local_process(
+                    job_id=paths.root.name,
+                    stage="generate",
+                ),
+            )
+            state = load_state(paths.state_json)
+            state["containers"]["generate"]["id"] = f"local-generate-pid-{pid}"
+            save_state(paths.state_json, state)
 
         state = load_state(paths.state_json)
         state["containers"]["generate"]["exit_code"] = exit_code
@@ -251,7 +354,7 @@ class JobManager:
             raise RuntimeError("generate_failed")
 
         self._scan_for_secret(paths=paths, secret=secret)
-        self._ingest_usage(job_id=paths.root.name, owner_user_id=owner_user_id, attempt=attempt, job_dir=paths.root)
+        ingest_usage_record(job_id=paths.root.name, owner_user_id=owner_user_id, attempt=attempt, job_dir=paths.root)
 
     def _run_test(self, *, paths: JobPaths, owner_user_id: str, attempt: int) -> None:
         state = load_state(paths.state_json)
@@ -264,28 +367,75 @@ class JobManager:
         pids_limit = int(rl.get("pids_limit") or SETTINGS.default_pids)
         max_terminal = int(rl.get("max_terminal_log_bytes") or SETTINGS.default_max_terminal_log_bytes)
 
-        container = create_test_container(
-            client=self._client,
-            job_id=paths.root.name,
-            owner_user_id=owner_user_id,
-            attempt=attempt,
-            job_dir=paths.root,
-            cpus=cpus,
-            memory_mb=memory_mb,
-            pids_limit=pids_limit,
-            extra_env={
-                "ATTEMPT": str(attempt),
-            },
-        )
-
         state.setdefault("containers", {})
-        state["containers"]["test"] = {"id": container.id, "name": container.name, "exit_code": None, "attempt": attempt}
-        save_state(paths.state_json, state)
+        if self._runner_executor == "docker":
+            if self._client is None:
+                raise RuntimeError("docker_unavailable")
+            container = create_test_container(
+                client=self._client,
+                job_id=paths.root.name,
+                owner_user_id=owner_user_id,
+                attempt=attempt,
+                job_dir=paths.root,
+                cpus=cpus,
+                memory_mb=memory_mb,
+                pids_limit=pids_limit,
+                extra_env={
+                    "ATTEMPT": str(attempt),
+                },
+            )
 
-        start_log_collector(container=container, log_path=paths.terminal_log, max_bytes=max_terminal, redact_secrets=[])
-        container.start()
-        res = container.wait()
-        exit_code = int(res.get("StatusCode") or 0)
+            state["containers"]["test"] = {
+                "id": container.id,
+                "name": container.name,
+                "exit_code": None,
+                "attempt": attempt,
+            }
+            save_state(paths.state_json, state)
+
+            start_log_collector(
+                container=container,
+                log_path=paths.terminal_log,
+                max_bytes=max_terminal,
+                redact_secrets=[],
+            )
+            container.start()
+            res = container.wait()
+            exit_code = int(res.get("StatusCode") or 0)
+        else:
+            script_path = self._resolve_runner_path(SETTINGS.runner_test_script)
+            state["containers"]["test"] = {
+                "id": f"local-test-attempt-{attempt}",
+                "name": script_path.name,
+                "exit_code": None,
+                "attempt": attempt,
+            }
+            save_state(paths.state_json, state)
+
+            local_env = {
+                "ATTEMPT": str(attempt),
+                "REALMOI_JOB_DIR": str(paths.root.resolve()),
+                "REALMOI_WORK_DIR": str((paths.root / ".tmp_work").resolve()),
+            }
+            exit_code, pid = run_local_runner(
+                script_path=script_path.resolve(),
+                env=local_env,
+                log_path=paths.terminal_log,
+                max_bytes=max_terminal,
+                redact_secrets=[],
+                on_started=lambda proc: self._remember_local_process(
+                    job_id=paths.root.name,
+                    stage="test",
+                    process=proc,
+                ),
+                on_finished=lambda: self._forget_local_process(
+                    job_id=paths.root.name,
+                    stage="test",
+                ),
+            )
+            state = load_state(paths.state_json)
+            state["containers"]["test"]["id"] = f"local-test-pid-{pid}"
+            save_state(paths.state_json, state)
 
         state = load_state(paths.state_json)
         state["containers"]["test"]["exit_code"] = exit_code
@@ -322,70 +472,3 @@ class JobManager:
             if secret in data:
                 file_path.write_text(data.replace(secret, "***"), encoding="utf-8")
                 raise RuntimeError("secret_leak_detected")
-
-    def _ingest_usage(self, *, job_id: str, owner_user_id: str, attempt: int, job_dir: Path) -> None:
-        usage_path = job_dir / "output" / "artifacts" / f"attempt_{attempt}" / "usage.json"
-        if not usage_path.exists():
-            return
-        try:
-            usage_obj = json.loads(usage_path.read_text(encoding="utf-8"))
-        except Exception:
-            return
-        usage = usage_obj.get("usage") or {}
-        model = str(usage_obj.get("model") or "")
-        if not model:
-            return
-
-        token_usage = TokenUsage(
-            input_tokens=int(usage.get("input_tokens") or 0),
-            cached_input_tokens=int(usage.get("cached_input_tokens") or 0),
-            output_tokens=int(usage.get("output_tokens") or 0),
-            cached_output_tokens=int(usage.get("cached_output_tokens") or 0),
-        )
-
-        with SessionLocal() as db:
-            pricing_row = db.get(ModelPricing, model)
-            if (
-                not pricing_row
-                or pricing_row.input_microusd_per_1m_tokens is None
-                or pricing_row.cached_input_microusd_per_1m_tokens is None
-                or pricing_row.output_microusd_per_1m_tokens is None
-                or pricing_row.cached_output_microusd_per_1m_tokens is None
-            ):
-                cost = None
-                snap = (None, None, None, None)
-            else:
-                pricing = Pricing(
-                    currency=pricing_row.currency,
-                    input_microusd_per_1m_tokens=pricing_row.input_microusd_per_1m_tokens,
-                    cached_input_microusd_per_1m_tokens=pricing_row.cached_input_microusd_per_1m_tokens,
-                    output_microusd_per_1m_tokens=pricing_row.output_microusd_per_1m_tokens,
-                    cached_output_microusd_per_1m_tokens=pricing_row.cached_output_microusd_per_1m_tokens,
-                )
-                cost = compute_cost_microusd(token_usage, pricing)
-                snap = (
-                    pricing.input_microusd_per_1m_tokens,
-                    pricing.cached_input_microusd_per_1m_tokens,
-                    pricing.output_microusd_per_1m_tokens,
-                    pricing.cached_output_microusd_per_1m_tokens,
-                )
-
-            rec = UsageRecord(
-                job_id=job_id,
-                owner_user_id=owner_user_id,
-                stage="generate",
-                model=model,
-                codex_thread_id=str(usage_obj.get("codex_thread_id") or "") or None,
-                input_tokens=token_usage.input_tokens,
-                cached_input_tokens=token_usage.cached_input_tokens,
-                output_tokens=token_usage.output_tokens,
-                cached_output_tokens=token_usage.cached_output_tokens,
-                currency="USD",
-                input_microusd_per_1m_tokens=snap[0],
-                cached_input_microusd_per_1m_tokens=snap[1],
-                output_microusd_per_1m_tokens=snap[2],
-                cached_output_microusd_per_1m_tokens=snap[3],
-                cost_microusd=cost,
-            )
-            db.add(rec)
-            db.commit()

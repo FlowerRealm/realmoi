@@ -1,10 +1,10 @@
 # realmoi
 
-OI/算法竞赛「调题助手」MVP：用户提交题面 +（可选）tests.zip +（可选）当前 C++ 代码，并可选择模型思考量（`low/medium/high/xhigh`）；后端启动 Docker 容器在容器内调用 Codex CLI 生成 `main.cpp`，并在隔离的 test 容器内编译/跑完全部 tests，前端可实时观看终端输出与状态时间线。
+OI/算法竞赛「调题助手」MVP：用户提交题面 +（可选）tests.zip +（可选）当前 C++ 代码，并可选择模型思考量（`low/medium/high/xhigh`）；后端默认在本机执行 generate/test（不经 Docker），也可切换为 Docker 模式；前端可实时观看终端输出与状态时间线。
 
 ## 1. 组件
 
-- `backend/`：FastAPI（用户系统 / Job / Docker 管理 / 用量计费）
+- `backend/`：FastAPI（用户系统 / Job 执行编排 / 用量计费）
 - `runner/`：Docker 镜像（Codex CLI + C++ 编译器 + runner 脚本）
 - `frontend/`：Next.js（主页为新调题助手 UI：Portal/Cockpit；另含登录/注册）
 - `scripts/cleanup_jobs.py`：清理已完成且过期（默认 7 天）的 job 与容器（用于 cron）
@@ -27,12 +27,17 @@ REALMOI_OPENAI_API_KEY=""
 make dev
 ```
 
+说明：
+- `make dev` 只做本地启动（Python venv + npm dev），不会执行 Docker 构建。
+- Job 执行默认走本机 runner（`REALMOI_RUNNER_EXECUTOR=local`）。
+- 如需切换到 Docker runner，设置 `REALMOI_RUNNER_EXECUTOR=docker`，并确保 `REALMOI_RUNNER_IMAGE` 可用。
+
 启动后可在管理后台 `http://localhost:3000/admin/upstream-models` 直接新增/编辑上游渠道配置（持久化到数据库），并按渠道聚合查看上游模型列表。
 
-### 2.1 构建 runner 镜像
+### 2.1 （可选）本地构建 runner 镜像
 
 ```bash
-docker build -t realmoi-runner:dev runner
+docker build -t realmoi/realmoi-runner:latest runner
 ```
 
 ### 2.2 启动后端
@@ -50,7 +55,8 @@ export REALMOI_OPENAI_API_KEY=""
 export REALMOI_JWT_SECRET="change-me"
 export REALMOI_ADMIN_USERNAME="admin"
 export REALMOI_ADMIN_PASSWORD="admin-password-123"
-export REALMOI_RUNNER_IMAGE="realmoi-runner:dev"
+export REALMOI_RUNNER_EXECUTOR="local"
+export REALMOI_RUNNER_IMAGE="realmoi/realmoi-runner:latest"
 
 uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
 ```
@@ -131,7 +137,7 @@ make docker-up-local
 方式 B（手动）：
 
 ```bash
-# 先构建 runner（后端创建任务容器时会用到这个镜像）
+# 先构建 runner（仅 Docker runner 模式需要）
 docker build -t realmoi/realmoi-runner:latest runner
 
 # 再构建 backend/frontend 并启动
@@ -141,6 +147,7 @@ docker compose up -d --no-build
 
 说明：
 - `docker-compose.yml` 已支持 `build`（backend/frontend），因此可以直接本地构建。
+- Docker 部署默认强制 `REALMOI_RUNNER_EXECUTOR=docker`（开发环境 `make dev` 仍默认 `local`）。
 - 若你希望使用自定义镜像名，可在 `.env` 设置：
   - `REALMOI_RUNNER_IMAGE=your-namespace/realmoi-runner:local`
   - `REALMOI_BACKEND_IMAGE=your-namespace/realmoi-backend`
@@ -180,8 +187,8 @@ make docker-build-local
 - 后端 API：`http://localhost:8000/api`
 
 说明：
-- `backend` 容器会挂载 `/var/run/docker.sock`，用于按需创建 `REALMOI_RUNNER_IMAGE` 对应的 runner 容器。
-- 若本地没有 runner 镜像，后端会在首次任务创建时自动 pull `REALMOI_RUNNER_IMAGE`。
+- `backend` 容器会挂载 `/var/run/docker.sock`，用于在 `REALMOI_RUNNER_EXECUTOR=docker` 时创建 `REALMOI_RUNNER_IMAGE` 对应的 runner 容器。
+- 若本地没有 runner 镜像，后端会在首次 Docker 任务创建时自动 pull `REALMOI_RUNNER_IMAGE`。
 - 默认镜像名：
   - `realmoi/realmoi-backend:latest`
   - `realmoi/realmoi-frontend:latest`

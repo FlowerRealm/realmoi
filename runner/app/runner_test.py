@@ -14,6 +14,12 @@ from typing import Any, Literal
 
 
 MAX_STREAM_BYTES = 65536
+JOB_DIR = Path(os.environ.get("REALMOI_JOB_DIR") or "/job")
+WORK_DIR = Path(os.environ.get("REALMOI_WORK_DIR") or "/tmp/work")
+
+
+def job_path(*parts: str) -> Path:
+    return JOB_DIR.joinpath(*parts)
 
 
 def b64_trunc(data: bytes, max_bytes: int = MAX_STREAM_BYTES) -> tuple[str, bool]:
@@ -28,7 +34,7 @@ def write_json(path: Path, obj: Any) -> None:
 
 
 def read_job() -> dict[str, Any]:
-    return json.loads(Path("/job/input/job.json").read_text(encoding="utf-8"))
+    return json.loads(job_path("input", "job.json").read_text(encoding="utf-8"))
 
 
 def normalize_tokens(s: str) -> list[str]:
@@ -80,7 +86,7 @@ class Case:
 
 def load_cases(job: dict[str, Any]) -> list[Case]:
     tests = job.get("tests") or {}
-    tests_dir = Path("/job/input") / str(tests.get("dir") or "tests")
+    tests_dir = job_path("input") / str(tests.get("dir") or "tests")
     fmt = str(tests.get("format") or "auto")
     compare_mode = str((tests.get("compare") or {}).get("mode") or "tokens")
 
@@ -137,7 +143,7 @@ def run_program(
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        cwd="/tmp/work",
+        cwd=str(WORK_DIR),
         preexec_fn=preexec,
     )
     assert proc.stdin and proc.stdout and proc.stderr
@@ -220,14 +226,14 @@ def main() -> int:
     compare_mode = str(((job.get("tests") or {}).get("compare") or {}).get("mode") or "tokens")
     run_if_no_expected = bool((job.get("tests") or {}).get("run_if_no_expected", True))
 
-    out_root = Path("/job/output") / "artifacts" / f"attempt_{attempt}" / "test_output"
-    work_dir = Path("/tmp/work")
+    out_root = job_path("output") / "artifacts" / f"attempt_{attempt}" / "test_output"
+    work_dir = WORK_DIR
     shutil.rmtree(out_root, ignore_errors=True)
     shutil.rmtree(work_dir, ignore_errors=True)
     out_root.mkdir(parents=True, exist_ok=True)
     work_dir.mkdir(parents=True, exist_ok=True)
 
-    src_cpp = Path("/job/output/main.cpp")
+    src_cpp = job_path("output", "main.cpp")
     exe_path = work_dir / "prog"
 
     compile_cmd = ["g++", "-std=c++20", "-O2", "-pipe", str(src_cpp), "-o", str(exe_path)]
@@ -291,7 +297,7 @@ def main() -> int:
         return 0
 
     cases = load_cases(job)
-    tests_dir = Path("/job/input") / str((job.get("tests") or {}).get("dir") or "tests")
+    tests_dir = job_path("input") / str((job.get("tests") or {}).get("dir") or "tests")
 
     summary = report["summary"]
     summary["total"] = len(cases)

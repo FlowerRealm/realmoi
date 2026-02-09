@@ -35,7 +35,11 @@ class Settings(BaseSettings):
     admin_password: str | None = None
 
     # Runner / Docker
-    runner_image: str = "realmoi-runner:dev"
+    runner_executor: Literal["local", "docker"] = "local"
+    runner_image: str = "realmoi/realmoi-runner:latest"
+    runner_generate_script: str = "runner/app/runner_generate.py"
+    runner_test_script: str = "runner/app/runner_test.py"
+    runner_schema_path: str = "runner/schemas/codex_output_schema.json"
     docker_api_timeout_seconds: int = 120
 
     # Resource limits (server clamps user input to these)

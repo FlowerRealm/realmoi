@@ -5,7 +5,8 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
 ENV_FILE ?= .env
-RUNNER_IMAGE ?= realmoi-runner:dev
+RUNNER_IMAGE ?= realmoi/realmoi-runner:latest
+RUNNER_EXECUTOR ?= local
 BACKEND_HOST ?= 0.0.0.0
 BACKEND_PORT ?= 8000
 FRONTEND_PORT ?= 3000
@@ -25,7 +26,7 @@ endef
 .PHONY: help
 help:
 	@echo "Targets:"
-	@echo "  make dev            Start backend + frontend (dev)"
+	@echo "  make dev            Start backend + frontend locally (no docker build)"
 	@echo "  make test           Run backend tests (pytest)"
 	@echo "  make runner-build   Build runner docker image"
 	@echo "  make docker-build-local  Build backend/frontend/runner images locally"
@@ -39,6 +40,8 @@ help:
 	@echo "  - Built-in CN mirrors are enabled by default. Use REALMOI_BUILD_USE_CN_MIRROR=0 to disable."
 	@echo "  - Mirror overrides: REALMOI_BUILD_PIP_INDEX_URL / REALMOI_BUILD_NPM_REGISTRY / REALMOI_BUILD_APT_MIRROR."
 	@echo "  - Required for real Codex runs: valid upstream API key (env or admin channel config)."
+	@echo "  - make dev defaults to local runner execution (RUNNER_EXECUTOR=local)."
+	@echo "  - To force docker runner, set RUNNER_EXECUTOR=docker and ensure RUNNER_IMAGE exists."
 
 .PHONY: runner-build
 runner-build:
@@ -58,6 +61,7 @@ runner-build:
 docker-build-local:
 	$(LOAD_ENV)
 	export REALMOI_RUNNER_IMAGE="$${REALMOI_RUNNER_IMAGE:-realmoi/realmoi-runner:latest}"
+	export REALMOI_RUNNER_EXECUTOR="$${REALMOI_RUNNER_EXECUTOR:-docker}"
 	export REALMOI_BUILD_USE_CN_MIRROR="$${REALMOI_BUILD_USE_CN_MIRROR:-1}"
 	export REALMOI_BUILD_PIP_INDEX_URL="$${REALMOI_BUILD_PIP_INDEX_URL:-}"
 	export REALMOI_BUILD_NPM_REGISTRY="$${REALMOI_BUILD_NPM_REGISTRY:-}"
@@ -99,10 +103,11 @@ frontend-deps:
 	npm install
 
 .PHONY: dev
-dev: runner-build backend-deps frontend-deps
+dev: backend-deps frontend-deps
 	$(LOAD_ENV)
 
 	export REALMOI_RUNNER_IMAGE="$(RUNNER_IMAGE)"
+	export REALMOI_RUNNER_EXECUTOR="$(RUNNER_EXECUTOR)"
 	export REALMOI_OPENAI_BASE_URL="$${REALMOI_OPENAI_BASE_URL:-https://api.openai.com}"
 	export REALMOI_JWT_SECRET="$${REALMOI_JWT_SECRET:-dev-secret-change-me}"
 	export REALMOI_ALLOW_SIGNUP="$${REALMOI_ALLOW_SIGNUP:-1}"
@@ -112,6 +117,8 @@ dev: runner-build backend-deps frontend-deps
 	source ".venv/bin/activate"
 
 	echo "[make] backend: http://localhost:$(BACKEND_PORT) (api: /api)"
+	echo "[make] runner executor: $${REALMOI_RUNNER_EXECUTOR}"
+	echo "[make] runner image (docker mode only): $${REALMOI_RUNNER_IMAGE}"
 	uvicorn backend.app.main:app --reload --host "$(BACKEND_HOST)" --port "$(BACKEND_PORT)" &
 	BACKEND_PID=$$!
 

@@ -26,6 +26,7 @@ def test_run_generate_routes_upstream_by_model_channel(client, monkeypatch, tmp_
     from backend.app.settings import SETTINGS  # noqa: WPS433
 
     model = "model-route-channel"
+    monkeypatch.setattr(SETTINGS, "runner_executor", "docker")
     with SessionLocal() as db:
         row = db.get(ModelPricing, model)
         if not row:
