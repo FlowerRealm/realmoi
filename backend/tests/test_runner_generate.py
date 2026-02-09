@@ -1,6 +1,9 @@
 import json
+import os
+from pathlib import Path
 
 from runner.app.runner_generate import (
+    ensure_runner_generate_import_path,
     explanation_fields_are_chinese,
     has_cjk_text,
     normalize_reasoning_effort,
@@ -80,3 +83,10 @@ def test_parse_usage_supports_appserver_token_usage(tmp_path) -> None:
         "output_tokens": 30,
         "cached_output_tokens": 0,
     }
+
+
+def test_ensure_runner_generate_import_path_sets_pythonpath(monkeypatch) -> None:
+    monkeypatch.delenv("PYTHONPATH", raising=False)
+    ensure_runner_generate_import_path()
+    module_dir = str(Path(__file__).resolve().parents[2] / "runner" / "app")
+    assert os.environ.get("PYTHONPATH") == module_dir

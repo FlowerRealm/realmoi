@@ -132,6 +132,17 @@ def maybe_set_openai_api_key_from_auth_json() -> None:
         os.environ["OPENAI_API_KEY"] = key
 
 
+def ensure_runner_generate_import_path() -> None:
+    """Ensure child Python processes can import ``runner_generate`` by module name."""
+
+    module_dir = str(Path(__file__).resolve().parent)
+    current = str(os.environ.get("PYTHONPATH") or "")
+    paths = [p for p in current.split(os.pathsep) if p]
+    if module_dir in paths:
+        return
+    os.environ["PYTHONPATH"] = os.pathsep.join([module_dir, *paths]) if paths else module_dir
+
+
 _STATUS_SEQ: int | None = None
 _STATUS_LAST_SIG: tuple[str, str] | None = None
 _STATUS_LAST_TS: float = 0.0
@@ -883,6 +894,7 @@ def main() -> int:
         return 2
 
     maybe_set_openai_api_key_from_auth_json()
+    ensure_runner_generate_import_path()
     status_update(stage="analysis", summary="开始生成（Codex）")
 
     out_dir = job_path("output")
