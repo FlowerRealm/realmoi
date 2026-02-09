@@ -4,6 +4,7 @@ import io
 import os
 import zipfile
 from pathlib import Path
+from uuid import uuid4
 
 
 def _login(client, username: str, password: str) -> str:
@@ -18,7 +19,8 @@ def _login_admin_headers(client) -> dict[str, str]:
 
 
 def _signup_headers(client, username: str) -> dict[str, str]:
-    resp = client.post("/api/auth/signup", json={"username": username, "password": "password123"})
+    unique_username = f"{username}_{uuid4().hex[:8]}"
+    resp = client.post("/api/auth/signup", json={"username": unique_username, "password": "password123"})
     assert resp.status_code == 200
     return {"Authorization": f"Bearer {resp.json()['access_token']}"}
 

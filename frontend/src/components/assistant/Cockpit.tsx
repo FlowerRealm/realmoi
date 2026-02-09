@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch, API_BASE, getErrorMessage } from "@/lib/api";
 import { connectSse } from "@/lib/sse";
 import { GlassPanel } from "./GlassPanel";
-import type { JobRun, JobState, Message, PromptData, SolutionArtifact } from "./types";
+import type { JobRun, JobState, Message, PromptData } from "./types";
 import { buildTestsZip } from "./testsZip";
 
 type ReportArtifact = {
@@ -14,6 +14,98 @@ type ReportArtifact = {
     first_failure_message?: string;
   };
 };
+
+type JobStatusMeta = {
+  lifecycle: "running" | "finished" | "waiting" | "unknown";
+  headline: string;
+  phase: string;
+  raw: string;
+  badgeClassName: string;
+  dotClassName: string;
+};
+
+function resolveJobStatusMeta(status: string | null | undefined): JobStatusMeta {
+  const normalized = (status ?? "").trim().toLowerCase();
+  const raw = normalized || "-";
+
+  if (!normalized) {
+    return {
+      lifecycle: "waiting",
+      headline: "等待中",
+      phase: "尚未开始",
+      raw,
+      badgeClassName: "bg-slate-100 text-slate-600 border border-slate-200",
+      dotClassName: "bg-slate-400",
+    };
+  }
+
+  if (normalized === "created") {
+    return {
+      lifecycle: "waiting",
+      headline: "等待中",
+      phase: "已创建，待启动",
+      raw,
+      badgeClassName: "bg-amber-50 text-amber-700 border border-amber-200",
+      dotClassName: "bg-amber-500",
+    };
+  }
+
+  if (normalized.startsWith("running")) {
+    let phase = "执行中";
+    if (normalized === "running_generate") phase = "生成中";
+    if (normalized === "running_test") phase = "测试中";
+    return {
+      lifecycle: "running",
+      headline: "进行中",
+      phase,
+      raw,
+      badgeClassName: "bg-indigo-50 text-indigo-700 border border-indigo-200",
+      dotClassName: "bg-indigo-500",
+    };
+  }
+
+  if (normalized === "succeeded") {
+    return {
+      lifecycle: "finished",
+      headline: "已结束",
+      phase: "成功",
+      raw,
+      badgeClassName: "bg-emerald-50 text-emerald-700 border border-emerald-200",
+      dotClassName: "bg-emerald-500",
+    };
+  }
+
+  if (normalized === "failed") {
+    return {
+      lifecycle: "finished",
+      headline: "已结束",
+      phase: "失败",
+      raw,
+      badgeClassName: "bg-rose-50 text-rose-700 border border-rose-200",
+      dotClassName: "bg-rose-500",
+    };
+  }
+
+  if (normalized === "cancelled") {
+    return {
+      lifecycle: "finished",
+      headline: "已结束",
+      phase: "已取消",
+      raw,
+      badgeClassName: "bg-orange-50 text-orange-700 border border-orange-200",
+      dotClassName: "bg-orange-500",
+    };
+  }
+
+  return {
+    lifecycle: "unknown",
+    headline: "状态未知",
+    phase: normalized,
+    raw,
+    badgeClassName: "bg-slate-100 text-slate-600 border border-slate-200",
+    dotClassName: "bg-slate-500",
+  };
+}
 
 function b64ToBytes(b64: string): Uint8Array {
   const bin = atob(b64);
@@ -25,28 +117,6 @@ function b64ToBytes(b64: string): Uint8Array {
 function buildStatementWithUserMessage(statement: string, userMessage?: string): string {
   if (!userMessage?.trim()) return statement;
   return `${statement}\n\n---\n\n### 用户追加指令\n${userMessage.trim()}\n`;
-}
-
-function formatSolutionAsMessage(sol: SolutionArtifact): string {
-  const blocks: string[] = [];
-  blocks.push(sol.solution_idea.trim());
-  blocks.push("");
-  blocks.push("【用户代码思路复盘】");
-  blocks.push(sol.seed_code_idea.trim());
-  blocks.push("");
-  blocks.push("【用户代码错误原因】");
-  blocks.push(sol.seed_code_bug_reason.trim());
-  if (sol.assumptions?.length) {
-    blocks.push("");
-    blocks.push("【前置假设】");
-    blocks.push(sol.assumptions.join("\n"));
-  }
-  if (sol.complexity) {
-    blocks.push("");
-    blocks.push("【复杂度】");
-    blocks.push(sol.complexity);
-  }
-  return blocks.join("\n");
 }
 
 function formatJobError(error: unknown): string | null {
@@ -153,7 +223,6 @@ function buildAgentLiveContent(state: AgentLiveState): string {
   const blocks: string[] = [];
   const reasoning = state.reasoning.trim();
   const execution = state.execution.trim();
-  const result = state.result.trim();
 
   if (reasoning) {
     const reasoningLines = reasoning
@@ -179,7 +248,6 @@ function buildAgentLiveContent(state: AgentLiveState): string {
     }
   }
 
-  if (result) blocks.push(`【结果】${result}`);
   return blocks.join("\n\n");
 }
 
@@ -429,6 +497,7 @@ export function Cockpit({
   const reasoningBufferRef = useRef<Record<string, ReasoningBufferState>>({});
   const hasAgentStatusEventRef = useRef<Record<string, boolean>>({});
   const lastAgentStatusSeqRef = useRef<Record<string, number>>({});
+  const sealedJobsRef = useRef<Record<string, boolean>>({});
 
   const syncJobUrl = (jobId: string, mode: "push" | "replace" = "push") => {
     if (typeof window === "undefined") return;
@@ -466,6 +535,7 @@ export function Cockpit({
   }, [setMessages]);
 
   const pushTerminalTokenStream = useCallback((jobId: string, chunkText: string) => {
+    if (sealedJobsRef.current[jobId]) return;
     const clean = normalizeTerminalChunk(chunkText);
     if (!clean.trim()) return;
     const prev = terminalStreamTextRef.current[jobId] ?? "";
@@ -485,6 +555,7 @@ export function Cockpit({
   }, [upsertAssistantMessage]);
 
   const pushAgentStatusStream = useCallback((jobId: string, line: AgentStatusLine) => {
+    if (sealedJobsRef.current[jobId]) return;
     const seq = parseNumericMeta(line.seq);
     if (seq !== null) {
       const lastSeq = lastAgentStatusSeqRef.current[jobId] ?? 0;
@@ -679,6 +750,7 @@ export function Cockpit({
     setMainCpp(null);
     setReport(null);
     setJob(null);
+    sealedJobsRef.current[activeJobId] = false;
     terminalStreamTextRef.current[activeJobId] = "";
     agentLiveStateRef.current[activeJobId] = { reasoning: "", execution: "", result: "" };
     reasoningBufferRef.current[activeJobId] = { buffer: "", summaryIndex: null };
@@ -725,6 +797,7 @@ export function Cockpit({
             url,
             (event, data) => {
               if (event !== "agent_status") return;
+              if (sealedJobsRef.current[activeJobId]) return;
               try {
                 const obj = JSON.parse(data);
                 const nextOffset = Number(obj.offset);
@@ -768,6 +841,7 @@ export function Cockpit({
             url,
             (event, data) => {
               if (event !== "terminal") return;
+              if (sealedJobsRef.current[activeJobId]) return;
               try {
                 const obj = JSON.parse(data);
                 const nextOffset = Number(obj.offset);
@@ -812,15 +886,17 @@ export function Cockpit({
           prev.map((r) => (r.jobId === activeJobId ? { ...r, status: st.status } : r))
         );
 
-        if (st.status?.startsWith("running")) return;
+        const normalizedStatus = String(st.status || "").trim().toLowerCase();
+        const isTerminalStatus = normalizedStatus === "succeeded" || normalizedStatus === "failed" || normalizedStatus === "cancelled";
+        if (!isTerminalStatus) return;
 
         finalized = true;
+        sealedJobsRef.current[activeJobId] = true;
         if (t) clearInterval(t);
         finalizeLiveTokenStream(activeJobId);
 
         if (st.status === "succeeded") {
-          const [sol, cpp, rep] = await Promise.all([
-            apiFetch<SolutionArtifact>(`/jobs/${activeJobId}/artifacts/solution.json`).catch(() => null),
+          const [cpp, rep] = await Promise.all([
             apiFetch<string>(`/jobs/${activeJobId}/artifacts/main.cpp`).catch(() => null),
             apiFetch<ReportArtifact>(`/jobs/${activeJobId}/artifacts/report.json`).catch(() => null),
           ]);
@@ -828,21 +904,12 @@ export function Cockpit({
           setMainCpp(cpp);
           setReport(rep);
 
-          if (sol) {
-            upsertAssistantMessage({
-              role: "assistant",
-              jobId: activeJobId,
-              messageKey: `job-final-${activeJobId}`,
-              content: formatSolutionAsMessage(sol),
-            });
-          } else {
-            upsertAssistantMessage({
-              role: "assistant",
-              jobId: activeJobId,
-              messageKey: `job-final-${activeJobId}`,
-              content: `Job 已结束（status=${st.status}）。未获取到 solution.json（可能尚未生成或已清理）。`,
-            });
-          }
+          upsertAssistantMessage({
+            role: "assistant",
+            jobId: activeJobId,
+            messageKey: `job-final-${activeJobId}`,
+            content: `Job 已结束（status=${st.status}）。代码与测试详情请查看右侧面板。`,
+          });
         } else {
           const errorHint = formatJobError(st.error);
           if (cancelled) return;
@@ -889,6 +956,9 @@ export function Cockpit({
 
   const canContinueChat = Boolean(initialPrompt);
   const visibleMessages = buildVisibleMessages(messages, activeJobId);
+  const currentRunStatus = runs.find((run) => run.jobId === activeJobId)?.status;
+  const statusMeta = resolveJobStatusMeta(job?.status ?? currentRunStatus);
+  const isRunningStatus = statusMeta.lifecycle === "running";
 
   return (
     <div className="h-full w-full min-h-0 p-4 md:p-4 animate-in fade-in duration-500 bg-transparent overflow-hidden">
@@ -903,7 +973,24 @@ export function Cockpit({
               <div className="text-[11px] uppercase tracking-wide text-slate-400 font-semibold">工作区</div>
               <div className="text-xs text-slate-700 font-mono truncate">{activeJobId ?? "暂无 Job"}</div>
               <div className="text-[11px] text-slate-500 mt-1">
-                状态: <span className="font-mono">{job?.status ?? "-"}</span>
+                任务状态:
+                <span
+                  className={[
+                    "ml-1.5 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold",
+                    statusMeta.badgeClassName,
+                  ].join(" ")}
+                >
+                  <span
+                    className={[
+                      "h-1.5 w-1.5 rounded-full",
+                      isRunningStatus ? "animate-pulse" : "",
+                      statusMeta.dotClassName,
+                    ].join(" ")}
+                  />
+                  {statusMeta.headline} · {statusMeta.phase}
+                </span>
+                <span className="mx-2 text-slate-300">|</span>
+                原始状态: <span className="font-mono">{statusMeta.raw}</span>
                 <span className="mx-2 text-slate-300">|</span>
                 模型: <span className="font-mono">{job?.model ?? initialPrompt?.model ?? "-"}</span>
                 <span className="mx-2 text-slate-300">|</span>
@@ -913,7 +1000,13 @@ export function Cockpit({
             <div className="flex items-center gap-2">
               <button
                 onClick={cancelJob}
-                className="px-3.5 py-2 rounded-lg text-xs font-semibold text-slate-600 bg-white border border-slate-200 hover:text-rose-600"
+                disabled={!isRunningStatus}
+                className={[
+                  "px-3.5 py-2 rounded-lg text-xs font-semibold border",
+                  isRunningStatus
+                    ? "text-slate-600 bg-white border-slate-200 hover:text-rose-600"
+                    : "text-slate-400 bg-slate-100/80 border-slate-200 cursor-not-allowed",
+                ].join(" ")}
               >
                 取消任务
               </button>

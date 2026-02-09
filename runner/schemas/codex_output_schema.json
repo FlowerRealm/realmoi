@@ -1,20 +1,8 @@
 {
   "type": "object",
-  "additionalProperties": false,
-  "required": [
-    "main_cpp",
-    "solution_idea",
-    "seed_code_idea",
-    "seed_code_bug_reason",
-    "assumptions",
-    "complexity"
-  ],
+  "additionalProperties": true,
+  "required": ["main_cpp"],
   "properties": {
-    "main_cpp": { "type": "string", "minLength": 1 },
-    "solution_idea": { "type": "string", "minLength": 1 },
-    "seed_code_idea": { "type": "string", "minLength": 1 },
-    "seed_code_bug_reason": { "type": "string", "minLength": 1 },
-    "assumptions": { "type": "array", "items": { "type": "string" } },
-    "complexity": { "type": "string" }
+    "main_cpp": { "type": "string", "minLength": 1 }
   }
 }
