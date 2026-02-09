@@ -19,12 +19,42 @@ services:
       REALMOI_ADMIN_PASSWORD: ${REALMOI_ADMIN_PASSWORD:-admin-password-123}
       REALMOI_RUNNER_EXECUTOR: ${REALMOI_RUNNER_EXECUTOR:-docker}
       REALMOI_RUNNER_IMAGE: ${REALMOI_RUNNER_IMAGE:-realmoi/realmoi-runner:latest}
+      REALMOI_JUDGE_MODE: ${REALMOI_JUDGE_MODE:-embedded}
     volumes:
       - realmoi_data:/app/data
       - realmoi_jobs:/app/jobs
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
       - "${REALMOI_BACKEND_PORT:-8000}:8000"
+
+  judge:
+    image: ${REALMOI_BACKEND_IMAGE:-realmoi/realmoi-backend}:${REALMOI_IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+      args:
+        USE_CN_MIRROR: ${REALMOI_BUILD_USE_CN_MIRROR:-1}
+        PIP_INDEX_URL: ${REALMOI_BUILD_PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple}
+    command: ["python", "-X", "utf8", "-m", "backend.app.judge_daemon"]
+    restart: unless-stopped
+    environment:
+      REALMOI_OPENAI_BASE_URL: ${REALMOI_OPENAI_BASE_URL:-https://api.openai.com}
+      REALMOI_OPENAI_API_KEY: ${REALMOI_OPENAI_API_KEY:-}
+      REALMOI_JWT_SECRET: ${REALMOI_JWT_SECRET:-change-me}
+      REALMOI_ALLOW_SIGNUP: ${REALMOI_ALLOW_SIGNUP:-1}
+      REALMOI_ADMIN_USERNAME: ${REALMOI_ADMIN_USERNAME:-admin}
+      REALMOI_ADMIN_PASSWORD: ${REALMOI_ADMIN_PASSWORD:-admin-password-123}
+      REALMOI_RUNNER_EXECUTOR: ${REALMOI_RUNNER_EXECUTOR:-docker}
+      REALMOI_RUNNER_IMAGE: ${REALMOI_RUNNER_IMAGE:-realmoi/realmoi-runner:latest}
+      REALMOI_JUDGE_MODE: independent
+      REALMOI_JUDGE_MACHINE_ID: ${REALMOI_JUDGE_MACHINE_ID:-judge-1}
+      REALMOI_JUDGE_POLL_INTERVAL_MS: ${REALMOI_JUDGE_POLL_INTERVAL_MS:-1000}
+    volumes:
+      - realmoi_data:/app/data
+      - realmoi_jobs:/app/jobs
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - backend
 
   frontend:
     image: ${REALMOI_FRONTEND_IMAGE:-realmoi/realmoi-frontend}:${REALMOI_IMAGE_TAG:-latest}

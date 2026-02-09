@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+import subprocess
+import sys
+import time
 
 
 def _write_job_and_state(*, jobs_root: Path, job_id: str, owner_user_id: str, model: str) -> Path:
@@ -99,6 +103,7 @@ def test_reconcile_marks_running_local_jobs_failed(client, monkeypatch, tmp_path
     from backend.app.settings import SETTINGS  # noqa: WPS433
 
     monkeypatch.setattr(SETTINGS, "runner_executor", "local")
+    monkeypatch.setattr(SETTINGS, "judge_mode", "embedded")
     monkeypatch.setattr(SETTINGS, "mock_mode", True)
 
     job_id = "job-local-reconcile"
@@ -138,3 +143,125 @@ def test_local_generate_raises_when_runner_returns_non_zero(client, monkeypatch,
         assert str(e) == "generate_failed"
     else:
         raise AssertionError("expected generate_failed")
+
+
+def test_start_job_queues_when_independent_mode(client, monkeypatch, tmp_path):  # noqa: ARG001
+    from backend.app.services import job_manager as job_manager_module  # noqa: WPS433
+    from backend.app.services.job_paths import get_job_paths  # noqa: WPS433
+    from backend.app.services.job_state import load_state  # noqa: WPS433
+    from backend.app.settings import SETTINGS  # noqa: WPS433
+
+    monkeypatch.setattr(SETTINGS, "runner_executor", "local")
+    monkeypatch.setattr(SETTINGS, "judge_mode", "independent")
+
+    job_id = "job-queued-mode"
+    _write_job_and_state(jobs_root=tmp_path, job_id=job_id, owner_user_id="u1", model="gpt-local")
+    jm = job_manager_module.JobManager(jobs_root=tmp_path)
+
+    state = jm.start_job(job_id=job_id, owner_user_id="u1")
+    saved = load_state(get_job_paths(jobs_root=tmp_path, job_id=job_id).state_json)
+
+    assert state["status"] == "queued"
+    assert saved["status"] == "queued"
+    assert jm._threads == {}
+
+
+def test_independent_judge_claim_and_release_lock(client, monkeypatch, tmp_path):  # noqa: ARG001
+    from backend.app.services import job_manager as job_manager_module  # noqa: WPS433
+    from backend.app.services.job_paths import get_job_paths  # noqa: WPS433
+    from backend.app.services.job_state import load_state, save_state  # noqa: WPS433
+    from backend.app.settings import SETTINGS  # noqa: WPS433
+
+    monkeypatch.setattr(SETTINGS, "runner_executor", "local")
+    monkeypatch.setattr(SETTINGS, "judge_mode", "independent")
+
+    job_id = "job-claim-once"
+    _write_job_and_state(jobs_root=tmp_path, job_id=job_id, owner_user_id="u1", model="gpt-local")
+    jm = job_manager_module.JobManager(jobs_root=tmp_path)
+    jm.start_job(job_id=job_id, owner_user_id="u1")
+
+    claimed = jm.claim_next_queued_job(machine_id="judge-a")
+    assert claimed is not None
+    assert claimed["job_id"] == job_id
+    assert Path(claimed["lock_path"]).exists()
+
+    def _fake_run_job_thread(*, job_id: str, owner_user_id: str) -> None:  # noqa: ARG001
+        paths = get_job_paths(jobs_root=tmp_path, job_id=job_id)
+        state = load_state(paths.state_json)
+        state["status"] = "succeeded"
+        save_state(paths.state_json, state)
+
+    monkeypatch.setattr(jm, "_run_job_thread", _fake_run_job_thread)
+    jm.run_claimed_job(
+        job_id=claimed["job_id"],
+        owner_user_id=claimed["owner_user_id"],
+        lock_path=claimed["lock_path"],
+    )
+
+    assert not Path(claimed["lock_path"]).exists()
+    state = load_state(get_job_paths(jobs_root=tmp_path, job_id=job_id).state_json)
+    assert state["status"] == "succeeded"
+
+
+def test_reconcile_keeps_running_local_jobs_in_independent_mode(client, monkeypatch, tmp_path):  # noqa: ARG001
+    from backend.app.services import job_manager as job_manager_module  # noqa: WPS433
+    from backend.app.services.job_paths import get_job_paths  # noqa: WPS433
+    from backend.app.services.job_state import load_state, save_state  # noqa: WPS433
+    from backend.app.settings import SETTINGS  # noqa: WPS433
+
+    monkeypatch.setattr(SETTINGS, "runner_executor", "local")
+    monkeypatch.setattr(SETTINGS, "judge_mode", "independent")
+    monkeypatch.setattr(SETTINGS, "mock_mode", True)
+
+    job_id = "job-local-reconcile-independent"
+    _write_job_and_state(jobs_root=tmp_path, job_id=job_id, owner_user_id="u1", model="gpt-local")
+    paths = get_job_paths(jobs_root=tmp_path, job_id=job_id)
+    state = load_state(paths.state_json)
+    state["status"] = "running_generate"
+    state["containers"]["generate"] = {"id": "local-generate-pid-999", "name": "runner_generate.py", "exit_code": None}
+    save_state(paths.state_json, state)
+
+    jm = job_manager_module.JobManager(jobs_root=tmp_path)
+    jm.reconcile()
+
+    state = load_state(paths.state_json)
+    assert state["status"] == "running_generate"
+
+
+def test_cancel_job_stops_local_pid_from_state(client, monkeypatch, tmp_path):  # noqa: ARG001
+    from backend.app.services import job_manager as job_manager_module  # noqa: WPS433
+    from backend.app.services.job_paths import get_job_paths  # noqa: WPS433
+    from backend.app.services.job_state import load_state, save_state  # noqa: WPS433
+    from backend.app.settings import SETTINGS  # noqa: WPS433
+
+    monkeypatch.setattr(SETTINGS, "runner_executor", "local")
+    monkeypatch.setattr(SETTINGS, "judge_mode", "independent")
+
+    proc = subprocess.Popen(  # noqa: S603
+        [sys.executable, "-c", "import time; time.sleep(30)"],
+        preexec_fn=os.setsid,
+    )
+    try:
+        job_id = "job-cancel-by-state-pid"
+        _write_job_and_state(jobs_root=tmp_path, job_id=job_id, owner_user_id="u1", model="gpt-local")
+        paths = get_job_paths(jobs_root=tmp_path, job_id=job_id)
+        state = load_state(paths.state_json)
+        state["status"] = "running_generate"
+        state["containers"]["generate"] = {
+            "id": f"local-generate-pid-{proc.pid}",
+            "name": "runner_generate.py",
+            "exit_code": None,
+        }
+        save_state(paths.state_json, state)
+
+        jm = job_manager_module.JobManager(jobs_root=tmp_path)
+        new_state = jm.cancel_job(job_id=job_id)
+        assert new_state["status"] == "cancelled"
+
+        deadline = time.time() + 2.0
+        while proc.poll() is None and time.time() < deadline:
+            time.sleep(0.05)
+        assert proc.poll() is not None
+    finally:
+        if proc.poll() is None:
+            proc.kill()

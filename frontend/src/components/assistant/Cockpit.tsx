@@ -39,11 +39,11 @@ function resolveJobStatusMeta(status: string | null | undefined): JobStatusMeta 
     };
   }
 
-  if (normalized === "created") {
+  if (normalized === "created" || normalized === "queued") {
     return {
       lifecycle: "waiting",
       headline: "等待中",
-      phase: "已创建，待启动",
+      phase: normalized === "queued" ? "已排队，等待测评机" : "已创建，待启动",
       raw,
       badgeClassName: "bg-amber-50 text-amber-700 border border-amber-200",
       dotClassName: "bg-amber-500",

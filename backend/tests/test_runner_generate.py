@@ -2,10 +2,13 @@ import json
 import os
 from pathlib import Path
 
+import runner.app.runner_generate as runner_generate_module
 from runner.app.runner_generate import (
     _extract_delta_from_params,
     _extract_item_from_params,
     _extract_text_from_turn,
+    build_prompt_generate,
+    build_prompt_repair,
     ensure_runner_generate_import_path,
     has_cjk_text,
     normalize_reasoning_effort,
@@ -116,3 +119,64 @@ def test_extract_item_from_params_supports_codex_event_wrapper() -> None:
 def test_extract_delta_from_params_prefers_nested_msg_delta() -> None:
     params = {"msg": {"delta": "partial response"}}
     assert _extract_delta_from_params(params) == "partial response"
+
+
+def test_generate_prompt_does_not_ask_codex_to_run_tests() -> None:
+    prompt = build_prompt_generate(
+        {
+            "problem": {"statement_md": "# A"},
+            "seed": {"current_code_cpp": "int main() { return 0; }"},
+        }
+    )
+    assert "独立测评机统一执行" in prompt
+    assert "runner_test.py" not in prompt
+    assert "python3 -X utf8" not in prompt
+
+
+def test_repair_prompt_does_not_ask_codex_to_run_tests() -> None:
+    prompt = build_prompt_repair(
+        {
+            "problem": {"statement_md": "# A"},
+            "seed": {"current_code_cpp": ""},
+        },
+        "first_failure=1 verdict=WA",
+        "int main() { return 0; }",
+    )
+    assert "独立测评机统一执行" in prompt
+    assert "runner_test.py" not in prompt
+    assert "python3 -X utf8" not in prompt
+
+
+def test_generate_prompt_requires_external_self_test_when_tests_present(monkeypatch) -> None:
+    monkeypatch.setattr(runner_generate_module, "JUDGE_SELF_TEST_URL", "http://127.0.0.1:8000/api/jobs/j1/self-test")
+    monkeypatch.setattr(runner_generate_module, "JUDGE_SELF_TEST_TOKEN", "token-demo")
+
+    prompt = build_prompt_generate(
+        {
+            "problem": {"statement_md": "# A"},
+            "seed": {"current_code_cpp": ""},
+            "tests": {"present": True},
+        }
+    )
+    assert "必须先调用外部自测接口" in prompt
+    assert "http://127.0.0.1:8000/api/jobs/j1/self-test" in prompt
+    assert "summary.first_failure" in prompt
+    assert "urllib.request.Request" in prompt
+    assert "\"X-Job-Token\": token" in prompt
+    assert "for attempt in range(1, max_retries + 1)" in prompt
+    assert "time.sleep(sleep_seconds)" in prompt
+    assert "first_failure_message" in prompt
+
+
+def test_generate_prompt_skips_external_self_test_when_no_tests(monkeypatch) -> None:
+    monkeypatch.setattr(runner_generate_module, "JUDGE_SELF_TEST_URL", "http://127.0.0.1:8000/api/jobs/j1/self-test")
+    monkeypatch.setattr(runner_generate_module, "JUDGE_SELF_TEST_TOKEN", "token-demo")
+
+    prompt = build_prompt_generate(
+        {
+            "problem": {"statement_md": "# A"},
+            "seed": {"current_code_cpp": ""},
+            "tests": {"present": False},
+        }
+    )
+    assert "当前未提供 tests，本轮无需调用外部自测接口" in prompt

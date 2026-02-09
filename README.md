@@ -6,6 +6,7 @@ OI/算法竞赛「调题助手」MVP：用户提交题面 +（可选）tests.zip
 
 - `backend/`：FastAPI（用户系统 / Job 执行编排 / 用量计费）
 - `runner/`：Docker 镜像（Codex CLI + C++ 编译器 + runner 脚本）
+- `backend/app/judge_daemon.py`：独立测评机守护进程（UOJ 风格“Web 后端 + Judge Worker”解耦）
 - `frontend/`：Next.js（主页为新调题助手 UI：Portal/Cockpit；另含登录/注册）
 - `scripts/cleanup_jobs.py`：清理已完成且过期（默认 7 天）的 job 与容器（用于 cron）
 
@@ -29,7 +30,9 @@ make dev
 
 说明：
 - `make dev` 只做本地启动（Python venv + npm dev），不会执行 Docker 构建。
+- `make dev` 现在默认一键启动：后端 + 前端 + 独立测评机（`REALMOI_JUDGE_MODE=independent`）。
 - Job 执行默认走本机 runner（`REALMOI_RUNNER_EXECUTOR=local`）。
+- 若你希望回到后端内线程执行，可显式设置 `REALMOI_JUDGE_MODE=embedded` 再执行 `make dev`。
 - 如需切换到 Docker runner，设置 `REALMOI_RUNNER_EXECUTOR=docker`，并确保 `REALMOI_RUNNER_IMAGE` 可用。
 - 默认 `REALMOI_RUNNER_CODEX_TRANSPORT=appserver`，前端优先使用 `agent_status.sse` 展示真正的实时思考/执行增量；若 appserver 失败会自动回退 `exec`。
 - `codex app-server` 的 `summaryTextDelta` 是流式增量（不保证天然按句子边界推送）；当前实现会结合 `summaryPartAdded + summaryIndex + 标点` 在前端做断句缓冲，保证思考行可读且持续实时。
@@ -80,6 +83,26 @@ npm run dev
 访问入口：
 - 主页（新调题助手 UI）：`http://localhost:3000/`
 - 登录：`http://localhost:3000/login`
+
+### 2.4 （可选）启动独立测评机（参考 UOJ 的独立 Judge 进程）
+
+当你希望把 Web API 与评测执行解耦时：
+
+```bash
+export REALMOI_JUDGE_MODE=independent
+make judge
+```
+
+说明：
+- `POST /api/jobs/{job_id}/start` 在该模式下会把 Job 置为 `queued`。
+- 独立测评机进程会轮询并抢占 `queued` Job 执行。
+- Codex 生成阶段不再负责自测；编译与测试统一由独立测评机执行。
+- 现已提供外部自测接口，便于 Codex 按需调用：
+  - `POST /api/jobs/{job_id}/self-test`
+  - Header: `X-Job-Token`（来自 `jobs/{job_id}/input/job.json` 的 `judge.self_test_token`）
+  - JSON Body: `{"main_cpp":"<完整 C++20 源码>"}`
+  - 建议：Codex 先调用该接口，若 `status != succeeded` 则根据 `summary.first_failure_*` 循环修复后再输出最终答案
+- 前端会显示 `已排队，等待测评机` 状态。
 
 ## 3. 生产运行要点（MVP）
 
@@ -151,6 +174,7 @@ docker compose up -d --no-build
 说明：
 - `docker-compose.yml` 已支持 `build`（backend/frontend），因此可以直接本地构建。
 - Docker 部署默认强制 `REALMOI_RUNNER_EXECUTOR=docker`（开发环境 `make dev` 仍默认 `local`）。
+- `docker-compose.yml` 现在包含 `judge` 服务（独立测评机），其 `REALMOI_JUDGE_MODE` 固定为 `independent`；`backend` 默认仍可保持 `embedded` 或按环境变量切换。
 - 若你希望使用自定义镜像名，可在 `.env` 设置：
   - `REALMOI_RUNNER_IMAGE=your-namespace/realmoi-runner:local`
   - `REALMOI_BACKEND_IMAGE=your-namespace/realmoi-backend`

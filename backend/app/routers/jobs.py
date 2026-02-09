@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -17,6 +17,7 @@ from ..services.job_paths import get_job_paths
 from ..services.job_state import iso_after_days, now_iso, save_state
 from ..services.pricing import microusd_to_amount_str
 from ..services.sse import tail_file_sse, tail_jsonl_sse
+from ..services.self_test_api import new_self_test_token, run_external_self_test
 from ..services.upstream_models import UpstreamModelsError, list_upstream_model_ids
 from ..services.upstream_channels import resolve_upstream_target
 from ..services.zip_safe import InvalidZip, ZipLimits, extract_zip_safe
@@ -40,6 +41,10 @@ class CreateJobResponse(BaseModel):
     job_id: str
     status: str
     created_at: str
+
+
+class ExternalSelfTestRequest(BaseModel):
+    main_cpp: str
 
 
 @router.post("", response_model=CreateJobResponse)
@@ -106,6 +111,7 @@ def create_job(
     memory_limit_mb = max(64, min(memory_limit_mb, SETTINGS.max_memory_mb))
 
     job_id = uuid.uuid4().hex
+    self_test_token = new_self_test_token()
     jobs_root = Path(SETTINGS.jobs_root)
     paths = get_job_paths(jobs_root=jobs_root, job_id=job_id)
 
@@ -155,6 +161,7 @@ def create_job(
             "max_terminal_log_bytes": SETTINGS.default_max_terminal_log_bytes,
         },
         "compile": {"cpp_std": "c++20"},
+        "judge": {"self_test_token": self_test_token},
         "tests": {
             "dir": "tests",
             "present": tests_present,
@@ -207,6 +214,34 @@ class JobListItem(BaseModel):
 class JobListResponse(BaseModel):
     items: list[JobListItem]
     total: int
+
+
+@router.post("/{job_id}/self-test")
+def external_self_test(
+    job_id: str,
+    payload: ExternalSelfTestRequest,
+    x_job_token: str | None = Header(default=None, alias="X-Job-Token"),
+):
+    if not x_job_token:
+        http_error(403, "invalid_job_token", "Missing job token")
+
+    paths = get_job_paths(jobs_root=Path(SETTINGS.jobs_root), job_id=job_id)
+    if not paths.state_json.exists() or not paths.job_json.exists():
+        http_error(404, "not_found", "Job not found")
+
+    job_obj = read_json(paths.job_json)
+    expected_token = str(((job_obj.get("judge") or {}).get("self_test_token")) or "")
+    if not expected_token or x_job_token != expected_token:
+        http_error(403, "invalid_job_token", "Invalid job token")
+
+    try:
+        return run_external_self_test(paths=paths, main_cpp=payload.main_cpp)
+    except ValueError as e:
+        if str(e) == "empty_main_cpp":
+            http_error(422, "invalid_main_cpp", "main_cpp is required")
+        raise
+    except RuntimeError as e:
+        http_error(500, "self_test_failed", str(e))
 
 
 @router.get("", response_model=JobListResponse)

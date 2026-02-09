@@ -42,6 +42,12 @@ class Settings(BaseSettings):
     runner_schema_path: str = "runner/schemas/codex_output_schema.json"
     runner_codex_transport: Literal["appserver", "exec", "auto"] = "appserver"
     docker_api_timeout_seconds: int = 120
+    judge_mode: Literal["embedded", "independent"] = "embedded"
+    judge_machine_id: str = ""
+    judge_poll_interval_ms: int = 1000
+    judge_lock_stale_seconds: int = 120
+    judge_api_base_url: str = ""
+    judge_self_test_timeout_seconds: int = 90
 
     # Resource limits (server clamps user input to these)
     max_cpus: float = 2.0

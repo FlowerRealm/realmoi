@@ -27,6 +27,7 @@ endef
 help:
 	@echo "Targets:"
 	@echo "  make dev            Start backend + frontend locally (no docker build)"
+	@echo "  make judge          Start independent judge daemon locally"
 	@echo "  make test           Run backend tests (pytest)"
 	@echo "  make runner-build   Build runner docker image"
 	@echo "  make docker-build-local  Build backend/frontend/runner images locally"
@@ -40,7 +41,7 @@ help:
 	@echo "  - Built-in CN mirrors are enabled by default. Use REALMOI_BUILD_USE_CN_MIRROR=0 to disable."
 	@echo "  - Mirror overrides: REALMOI_BUILD_PIP_INDEX_URL / REALMOI_BUILD_NPM_REGISTRY / REALMOI_BUILD_APT_MIRROR."
 	@echo "  - Required for real Codex runs: valid upstream API key (env or admin channel config)."
-	@echo "  - make dev defaults to local runner execution (RUNNER_EXECUTOR=local)."
+	@echo "  - make dev defaults to local runner execution (RUNNER_EXECUTOR=local) and starts judge in independent mode."
 	@echo "  - To force docker runner, set RUNNER_EXECUTOR=docker and ensure RUNNER_IMAGE exists."
 
 .PHONY: runner-build
@@ -108,6 +109,7 @@ dev: backend-deps frontend-deps
 
 	export REALMOI_RUNNER_IMAGE="$(RUNNER_IMAGE)"
 	export REALMOI_RUNNER_EXECUTOR="$(RUNNER_EXECUTOR)"
+	export REALMOI_JUDGE_MODE="$${REALMOI_JUDGE_MODE:-independent}"
 	export REALMOI_OPENAI_BASE_URL="$${REALMOI_OPENAI_BASE_URL:-https://api.openai.com}"
 	export REALMOI_JWT_SECRET="$${REALMOI_JWT_SECRET:-dev-secret-change-me}"
 	export REALMOI_ALLOW_SIGNUP="$${REALMOI_ALLOW_SIGNUP:-1}"
@@ -119,8 +121,16 @@ dev: backend-deps frontend-deps
 	echo "[make] backend: http://localhost:$(BACKEND_PORT) (api: /api)"
 	echo "[make] runner executor: $${REALMOI_RUNNER_EXECUTOR}"
 	echo "[make] runner image (docker mode only): $${REALMOI_RUNNER_IMAGE}"
+	echo "[make] judge mode: $${REALMOI_JUDGE_MODE}"
 	uvicorn backend.app.main:app --reload --host "$(BACKEND_HOST)" --port "$(BACKEND_PORT)" &
 	BACKEND_PID=$$!
+
+	JUDGE_PID=0
+	if [[ "$${REALMOI_JUDGE_MODE}" == "independent" ]]; then
+	  echo "[make] judge: starting independent daemon"
+	  python3 -X utf8 -m backend.app.judge_daemon &
+	  JUDGE_PID=$$!
+	fi
 
 	echo "[make] frontend: http://localhost:$(FRONTEND_PORT)"
 	cd "frontend"
@@ -129,8 +139,21 @@ dev: backend-deps frontend-deps
 	npm run dev &
 	FRONTEND_PID=$$!
 
-	trap 'kill "$${BACKEND_PID}" "$${FRONTEND_PID}" 2>/dev/null || true' INT TERM EXIT
+	cleanup() {
+	  kill "$${BACKEND_PID}" "$${FRONTEND_PID}" 2>/dev/null || true
+	  if [[ "$${JUDGE_PID}" -gt 0 ]]; then
+	    kill "$${JUDGE_PID}" 2>/dev/null || true
+	  fi
+	}
+	trap cleanup INT TERM EXIT
 	wait "$${BACKEND_PID}" "$${FRONTEND_PID}"
+
+.PHONY: judge
+judge: backend-deps
+	$(LOAD_ENV)
+	export REALMOI_JUDGE_MODE="$${REALMOI_JUDGE_MODE:-independent}"
+	source ".venv/bin/activate"
+	python3 -X utf8 -m backend.app.judge_daemon
 
 .PHONY: test
 test: backend-deps

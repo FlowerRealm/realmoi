@@ -194,6 +194,7 @@ def create_generate_container(
         image=SETTINGS.runner_image,
         name=name,
         environment=env,
+        extra_hosts={"host.docker.internal": "host-gateway"},
         user=user,
         volumes={job_dir_abs: {"bind": "/job", "mode": "rw"}},
         tmpfs={
