@@ -76,7 +76,10 @@ def run_local_runner(
     try:
         assert process.stdout is not None
         with log_path.open("ab") as log_file:
-            for chunk in iter(process.stdout.readline, b""):
+            while True:
+                chunk = process.stdout.read(4096)
+                if not chunk:
+                    break
                 safe_chunk = _redact(chunk)
                 if written >= max_bytes:
                     continue

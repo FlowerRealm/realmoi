@@ -1,6 +1,6 @@
 FROM node:22-bookworm-slim
 
-ARG CODEX_VERSION=0.92.0
+ARG CODEX_VERSION=0.98.0
 ARG USE_CN_MIRROR=1
 ARG APT_MIRROR=http://mirrors.aliyun.com
 ARG NPM_REGISTRY=https://registry.npmmirror.com

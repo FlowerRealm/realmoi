@@ -74,10 +74,114 @@ type TokenStreamView = {
 };
 
 type TokenStreamItem = {
-  kind: "stage" | "result" | "usage" | "backend" | "other";
+  kind: "thinking" | "stage" | "result" | "usage" | "backend" | "other";
   title: string;
   content: string;
 };
+
+type AgentStatusLine = {
+  seq?: number | string;
+  stage?: string;
+  summary?: string;
+  kind?: string;
+  delta?: string;
+  meta?: Record<string, unknown>;
+};
+
+type AgentLiveState = {
+  reasoning: string;
+  execution: string;
+  result: string;
+};
+
+type ReasoningBufferState = {
+  buffer: string;
+  summaryIndex: number | null;
+};
+
+function parseNumericMeta(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const text = value.trim();
+    if (!text) return null;
+    const num = Number(text);
+    if (Number.isFinite(num)) return num;
+  }
+  return null;
+}
+
+function normalizeReasoningParagraph(text: string): string {
+  return text.replace(/[\r\n]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function splitReasoningSegments(buffer: string, force: boolean): { lines: string[]; rest: string } {
+  const lines: string[] = [];
+  const pushParagraph = (segment: string) => {
+    const normalized = normalizeReasoningParagraph(segment);
+    if (normalized) lines.push(normalized);
+  };
+
+  let remaining = buffer.replace(/\r/g, "");
+  while (true) {
+    const match = remaining.match(/\n\s*\n/);
+    if (!match || typeof match.index !== "number") break;
+    pushParagraph(remaining.slice(0, match.index));
+    remaining = remaining.slice(match.index + match[0].length);
+  }
+
+  let rest = remaining;
+  if (force) {
+    pushParagraph(rest);
+    rest = "";
+  }
+  return { lines, rest };
+}
+
+function appendReasoningLines(state: AgentLiveState, lines: string[]): void {
+  if (!lines.length) return;
+  const merged = lines.join("\n");
+  state.reasoning = state.reasoning ? `${state.reasoning}\n${merged}` : merged;
+}
+
+function flushReasoningBuffer(state: AgentLiveState, stream: ReasoningBufferState, force: boolean): void {
+  const { lines, rest } = splitReasoningSegments(stream.buffer, force);
+  appendReasoningLines(state, lines);
+  stream.buffer = rest;
+}
+
+function buildAgentLiveContent(state: AgentLiveState): string {
+  const blocks: string[] = [];
+  const reasoning = state.reasoning.trim();
+  const execution = state.execution.trim();
+  const result = state.result.trim();
+
+  if (reasoning) {
+    const reasoningLines = reasoning
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+    for (const line of reasoningLines) {
+      if (/^【[^】]+】/.test(line)) {
+        blocks.push(line);
+      } else {
+        blocks.push(`【思考】${line}`);
+      }
+    }
+  }
+
+  if (execution) {
+    const executionLines = execution
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+    for (const line of executionLines) {
+      blocks.push(`【执行】${line}`);
+    }
+  }
+
+  if (result) blocks.push(`【结果】${result}`);
+  return blocks.join("\n\n");
+}
 
 function stageLabelZh(stage: string): string {
   const s = stage.trim().toLowerCase();
@@ -167,6 +271,33 @@ function isLegacyJobNotice(message: Message): boolean {
   return false;
 }
 
+function buildVisibleMessages(messages: Message[], activeJobId: string | null): Message[] {
+  const filtered = messages.filter((m) => {
+    if (m.messageKey?.startsWith("job-stream-")) return false;
+    if (isLegacyJobNotice(m)) return false;
+    if (!m.jobId) return true;
+    return Boolean(activeJobId) && m.jobId === activeJobId;
+  });
+
+  const deduped: Message[] = [];
+  const seenKeyIndex = new Map<string, number>();
+  for (const message of filtered) {
+    const key = message.messageKey?.trim();
+    if (!key) {
+      deduped.push(message);
+      continue;
+    }
+    const existingIndex = seenKeyIndex.get(key);
+    if (existingIndex === undefined) {
+      seenKeyIndex.set(key, deduped.length);
+      deduped.push(message);
+      continue;
+    }
+    deduped[existingIndex] = message;
+  }
+  return deduped;
+}
+
 function clipText(text: string, maxLen: number): string {
   const brief = text.replace(/\s+/g, " ").trim();
   if (!brief) return "";
@@ -189,6 +320,16 @@ function buildTokenItem(block: string, index: number): TokenStreamItem {
   if (stageMatch) {
     const stage = stageMatch[1].trim();
     const summary = clipText(stageMatch[2] || "", 36);
+    if (stage === "思考") {
+      const thinkingContent = block
+        .replace(/^【思考】\s*/m, "")
+        .trim();
+      return {
+        kind: "thinking",
+        title: summary ? `思考 · ${summary}` : "思考",
+        content: thinkingContent || summary || "思考中…",
+      };
+    }
     return {
       kind: "stage",
       title: summary ? `${stage} · ${summary}` : stage,
@@ -284,6 +425,10 @@ export function Cockpit({
   const initialRunStartedRef = useRef(false);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const terminalStreamTextRef = useRef<Record<string, string>>({});
+  const agentLiveStateRef = useRef<Record<string, AgentLiveState>>({});
+  const reasoningBufferRef = useRef<Record<string, ReasoningBufferState>>({});
+  const hasAgentStatusEventRef = useRef<Record<string, boolean>>({});
+  const lastAgentStatusSeqRef = useRef<Record<string, number>>({});
 
   const syncJobUrl = (jobId: string, mode: "push" | "replace" = "push") => {
     if (typeof window === "undefined") return;
@@ -339,6 +484,72 @@ export function Cockpit({
     });
   }, [upsertAssistantMessage]);
 
+  const pushAgentStatusStream = useCallback((jobId: string, line: AgentStatusLine) => {
+    const seq = parseNumericMeta(line.seq);
+    if (seq !== null) {
+      const lastSeq = lastAgentStatusSeqRef.current[jobId] ?? 0;
+      if (seq <= lastSeq) return;
+      lastAgentStatusSeqRef.current[jobId] = seq;
+    }
+
+    const state = agentLiveStateRef.current[jobId] || { reasoning: "", execution: "", result: "" };
+    const kind = String(line.kind || "").trim();
+    const delta = String(line.delta || "").replace(/\r/g, "");
+    const meta: Record<string, unknown> = line.meta && typeof line.meta === "object" ? line.meta : {};
+    const stream = reasoningBufferRef.current[jobId] || { buffer: "", summaryIndex: null };
+
+    if (kind === "reasoning_summary_delta") {
+      const nextSummaryIndex = parseNumericMeta(meta.summary_index);
+      if (
+        nextSummaryIndex !== null
+        && stream.summaryIndex !== null
+        && stream.summaryIndex !== nextSummaryIndex
+      ) {
+        flushReasoningBuffer(state, stream, true);
+      }
+      if (nextSummaryIndex !== null) {
+        stream.summaryIndex = nextSummaryIndex;
+      }
+      stream.buffer += delta;
+      flushReasoningBuffer(state, stream, false);
+    } else if (kind === "reasoning_summary_boundary") {
+      const nextSummaryIndex = parseNumericMeta(meta.summary_index);
+      if (nextSummaryIndex !== null) {
+        stream.summaryIndex = nextSummaryIndex;
+      }
+      flushReasoningBuffer(state, stream, true);
+    } else {
+      if (stream.buffer) {
+        flushReasoningBuffer(state, stream, true);
+      }
+      if (kind === "command_output_delta") {
+        state.execution += delta;
+      } else if (kind === "agent_message_delta") {
+        state.result += delta;
+      } else {
+        const summary = String(line.summary || "").trim();
+        const stage = String(line.stage || "").trim();
+        if (summary) {
+          const label = stage ? stageLabelZh(stage) : "状态";
+          state.reasoning += `${state.reasoning ? "\n" : ""}【${label}】${summary}`;
+        }
+      }
+    }
+
+    reasoningBufferRef.current[jobId] = stream;
+    agentLiveStateRef.current[jobId] = state;
+
+    const content = buildAgentLiveContent(state);
+    if (!content.trim()) return;
+    upsertAssistantMessage({
+      role: "assistant",
+      jobId,
+      messageKey: `job-token-${jobId}`,
+      streaming: true,
+      content,
+    });
+  }, [upsertAssistantMessage]);
+
   const finalizeTerminalTokenStream = useCallback((jobId: string) => {
     const current = terminalStreamTextRef.current[jobId] ?? "";
     if (!current.trim()) return;
@@ -350,6 +561,27 @@ export function Cockpit({
       content: current,
     });
   }, [upsertAssistantMessage]);
+
+  const finalizeLiveTokenStream = useCallback((jobId: string) => {
+    const usedAgentStream = Boolean(hasAgentStatusEventRef.current[jobId]);
+    if (!usedAgentStream) {
+      finalizeTerminalTokenStream(jobId);
+      return;
+    }
+    const state = agentLiveStateRef.current[jobId] || { reasoning: "", execution: "", result: "" };
+    const stream = reasoningBufferRef.current[jobId] || { buffer: "", summaryIndex: null };
+    flushReasoningBuffer(state, stream, true);
+    reasoningBufferRef.current[jobId] = stream;
+    const content = buildAgentLiveContent(state);
+    if (!content.trim()) return;
+    upsertAssistantMessage({
+      role: "assistant",
+      jobId,
+      messageKey: `job-token-${jobId}`,
+      streaming: false,
+      content,
+    });
+  }, [finalizeTerminalTokenStream, upsertAssistantMessage]);
 
   const lastMainCppRef = useRef<string>("");
   useEffect(() => {
@@ -447,6 +679,11 @@ export function Cockpit({
     setMainCpp(null);
     setReport(null);
     setJob(null);
+    terminalStreamTextRef.current[activeJobId] = "";
+    agentLiveStateRef.current[activeJobId] = { reasoning: "", execution: "", result: "" };
+    reasoningBufferRef.current[activeJobId] = { buffer: "", summaryIndex: null };
+    hasAgentStatusEventRef.current[activeJobId] = false;
+    lastAgentStatusSeqRef.current[activeJobId] = 0;
   }, [activeJobId]);
 
   const sendMessage = async () => {
@@ -474,10 +711,51 @@ export function Cockpit({
     }
   };
 
-  // Token-level stream for chat (from terminal SSE), independent from xterm host mount.
+  // Structured realtime stream from runner/appserver.
   useEffect(() => {
     if (!activeJobId) return;
-    terminalStreamTextRef.current[activeJobId] = "";
+    let statusOffset = 0;
+    const controller = new AbortController();
+
+    const loop = async () => {
+      while (!controller.signal.aborted) {
+        const url = `${API_BASE}/jobs/${activeJobId}/agent_status.sse?offset=${statusOffset}`;
+        try {
+          await connectSse(
+            url,
+            (event, data) => {
+              if (event !== "agent_status") return;
+              try {
+                const obj = JSON.parse(data);
+                const nextOffset = Number(obj.offset);
+                if (Number.isFinite(nextOffset) && nextOffset >= statusOffset) {
+                  statusOffset = nextOffset;
+                }
+                const item = obj.item as AgentStatusLine;
+                if (!hasAgentStatusEventRef.current[activeJobId]) {
+                  hasAgentStatusEventRef.current[activeJobId] = true;
+                  terminalStreamTextRef.current[activeJobId] = "";
+                }
+                pushAgentStatusStream(activeJobId, item);
+              } catch {}
+            },
+            controller.signal
+          );
+        } catch {
+          await new Promise((r) => setTimeout(r, 1000));
+        }
+      }
+    };
+
+    loop();
+    return () => {
+      controller.abort();
+    };
+  }, [activeJobId, pushAgentStatusStream]);
+
+  // Terminal stream fallback (for older runners that do not emit agent_status deltas).
+  useEffect(() => {
+    if (!activeJobId) return;
     const decoder = new TextDecoder();
     let terminalOffset = 0;
     const controller = new AbortController();
@@ -492,7 +770,11 @@ export function Cockpit({
               if (event !== "terminal") return;
               try {
                 const obj = JSON.parse(data);
-                terminalOffset = obj.offset;
+                const nextOffset = Number(obj.offset);
+                if (Number.isFinite(nextOffset) && nextOffset >= terminalOffset) {
+                  terminalOffset = nextOffset;
+                }
+                if (hasAgentStatusEventRef.current[activeJobId]) return;
                 const bytes = b64ToBytes(obj.chunk_b64);
                 const chunkText = decoder.decode(bytes);
                 pushTerminalTokenStream(activeJobId, chunkText);
@@ -534,7 +816,7 @@ export function Cockpit({
 
         finalized = true;
         if (t) clearInterval(t);
-        finalizeTerminalTokenStream(activeJobId);
+        finalizeLiveTokenStream(activeJobId);
 
         if (st.status === "succeeded") {
           const [sol, cpp, rep] = await Promise.all([
@@ -588,7 +870,7 @@ export function Cockpit({
       cancelled = true;
       if (t) clearInterval(t);
     };
-  }, [activeJobId, finalizeTerminalTokenStream, setRuns, upsertAssistantMessage]);
+  }, [activeJobId, finalizeLiveTokenStream, setRuns, upsertAssistantMessage]);
 
   const cancelJob = async () => {
     if (!activeJobId) return;
@@ -606,9 +888,7 @@ export function Cockpit({
   };
 
   const canContinueChat = Boolean(initialPrompt);
-  const visibleMessages = messages.filter(
-    (m) => !m.messageKey?.startsWith("job-stream-") && !isLegacyJobNotice(m)
-  );
+  const visibleMessages = buildVisibleMessages(messages, activeJobId);
 
   return (
     <div className="h-full w-full min-h-0 p-4 md:p-4 animate-in fade-in duration-500 bg-transparent overflow-hidden">
@@ -699,7 +979,7 @@ export function Cockpit({
                             {tokenView.items.length > 0 ? (
                               <details
                                 className="group rounded-md bg-[#f6f8fa]"
-                                open={m.streaming}
+                                open={m.streaming || tokenView.items.some((x) => x.kind === "thinking")}
                               >
                                 <summary className="list-none cursor-pointer px-3 py-2 text-[11px] font-normal text-slate-400 tracking-wide flex items-center justify-end gap-2">
                                   <span className="sr-only">过程记录（{tokenView.items.length}）</span>
@@ -707,21 +987,53 @@ export function Cockpit({
                                 </summary>
                                 <div className="bg-white">
                                   {tokenView.items.map((item, idx) => (
-                                    <details
-                                      key={idx}
-                                      className={[
-                                        "group",
-                                        idx > 0 ? "mt-1" : "",
-                                      ].join(" ")}
-                                    >
-                                      <summary className="list-none cursor-pointer px-3 py-2 text-[11px] font-normal text-slate-400 flex items-center justify-between gap-2">
-                                        <span className="min-w-0 truncate">{item.title}</span>
-                                        <span className="text-[#8c959f] transition-transform group-open:rotate-180">⌄</span>
-                                      </summary>
-                                      <div className="px-3 py-2.5 whitespace-pre-wrap break-words text-[12px] leading-5 text-[#24292f] font-mono bg-[#fdfefe]">
-                                        {item.content}
-                                      </div>
-                                    </details>
+                                    item.kind === "thinking" ? (
+                                      <details
+                                        key={idx}
+                                        className={[
+                                          "group",
+                                          idx > 0 ? "mt-1" : "",
+                                        ].join(" ")}
+                                      >
+                                        <summary className="list-none cursor-pointer px-3 py-2 text-[11px] font-normal text-slate-400 flex items-center justify-between gap-2">
+                                          <span className="min-w-0 whitespace-normal break-words">
+                                            {item.title || `思考段落 ${idx + 1}`}
+                                          </span>
+                                          <span className="text-[#8c959f] transition-transform group-open:rotate-180">⌄</span>
+                                        </summary>
+                                        <div
+                                          className={[
+                                            "px-3 py-2.5 text-[11px] leading-5 text-slate-400 bg-[#fbfcfd] space-y-1",
+                                          ].join(" ")}
+                                        >
+                                          {item.content
+                                            .split("\n")
+                                            .map((line) => line.trim())
+                                            .filter(Boolean)
+                                            .map((line, lineIdx) => (
+                                              <div key={lineIdx} className="whitespace-normal break-words">
+                                                {line}
+                                              </div>
+                                            ))}
+                                        </div>
+                                      </details>
+                                    ) : (
+                                      <details
+                                        key={idx}
+                                        className={[
+                                          "group",
+                                          idx > 0 ? "mt-1" : "",
+                                        ].join(" ")}
+                                      >
+                                        <summary className="list-none cursor-pointer px-3 py-2 text-[11px] font-normal text-slate-400 flex items-center justify-between gap-2">
+                                          <span className="min-w-0 truncate">{item.title}</span>
+                                          <span className="text-[#8c959f] transition-transform group-open:rotate-180">⌄</span>
+                                        </summary>
+                                        <div className="px-3 py-2.5 whitespace-pre-wrap break-words text-[12px] leading-5 text-[#24292f] font-mono bg-[#fdfefe]">
+                                          {item.content}
+                                        </div>
+                                      </details>
+                                    )
                                   ))}
                                 </div>
                               </details>

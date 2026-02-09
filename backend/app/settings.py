@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     runner_generate_script: str = "runner/app/runner_generate.py"
     runner_test_script: str = "runner/app/runner_test.py"
     runner_schema_path: str = "runner/schemas/codex_output_schema.json"
+    runner_codex_transport: Literal["appserver", "exec", "auto"] = "appserver"
     docker_api_timeout_seconds: int = 120
 
     # Resource limits (server clamps user input to these)

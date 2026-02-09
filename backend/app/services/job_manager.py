@@ -260,6 +260,7 @@ class JobManager:
             "ATTEMPT": str(attempt),
             "PROMPT_MODE": prompt_mode,
             "OPENAI_BASE_URL": upstream_base_url,
+            "REALMOI_CODEX_TRANSPORT": str(SETTINGS.runner_codex_transport or "appserver"),
         }
         if SETTINGS.mock_mode:
             extra_env["MOCK_MODE"] = "1"

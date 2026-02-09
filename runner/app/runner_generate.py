@@ -48,9 +48,18 @@ def parse_usage(jsonl_path: Path) -> dict[str, Any]:
     thread_id = ""
     model = ""
     usage_totals = {"input_tokens": 0, "cached_input_tokens": 0, "output_tokens": 0, "cached_output_tokens": 0}
+    turn_usage_map: dict[str, dict[str, int]] = {}
 
     if not jsonl_path.exists():
         return {"codex_thread_id": "", "model": "", "usage": usage_totals}
+
+    def _to_usage(raw: dict[str, Any]) -> dict[str, int]:
+        return {
+            "input_tokens": int(raw.get("input_tokens") or raw.get("inputTokens") or 0),
+            "cached_input_tokens": int(raw.get("cached_input_tokens") or raw.get("cachedInputTokens") or 0),
+            "output_tokens": int(raw.get("output_tokens") or raw.get("outputTokens") or 0),
+            "cached_output_tokens": int(raw.get("cached_output_tokens") or raw.get("cachedOutputTokens") or 0),
+        }
 
     for line in jsonl_path.read_text(encoding="utf-8", errors="ignore").splitlines():
         line = line.strip()
@@ -64,6 +73,14 @@ def parse_usage(jsonl_path: Path) -> dict[str, Any]:
         if not model and isinstance(obj.get("model"), str):
             model = obj["model"]
 
+        result = obj.get("result")
+        if isinstance(result, dict):
+            if not model and isinstance(result.get("model"), str):
+                model = str(result.get("model") or "")
+            thread = result.get("thread")
+            if not thread_id and isinstance(thread, dict):
+                thread_id = str(thread.get("id") or "")
+
         t = obj.get("type")
         if t == "thread.started":
             thread_id = str(obj.get("thread_id") or obj.get("thread", {}).get("id") or "")
@@ -71,6 +88,30 @@ def parse_usage(jsonl_path: Path) -> dict[str, Any]:
             u = obj.get("usage") or obj.get("turn", {}).get("usage") or {}
             for k in usage_totals:
                 usage_totals[k] += int(u.get(k) or 0)
+            continue
+
+        method = str(obj.get("method") or "")
+        params = obj.get("params") if isinstance(obj.get("params"), dict) else {}
+        if method == "thread/started" and not thread_id:
+            thread = params.get("thread") if isinstance(params.get("thread"), dict) else {}
+            thread_id = str(thread.get("id") or "")
+            continue
+        if method == "thread/tokenUsage/updated":
+            turn_id = str(params.get("turnId") or "")
+            token_usage = params.get("tokenUsage") if isinstance(params.get("tokenUsage"), dict) else {}
+            usage_raw = token_usage.get("last") or token_usage.get("total")
+            if isinstance(usage_raw, dict):
+                usage_obj = _to_usage(usage_raw)
+                if turn_id:
+                    turn_usage_map[turn_id] = usage_obj
+                else:
+                    turn_usage_map["_single_turn"] = usage_obj
+
+    if turn_usage_map:
+        usage_totals = {"input_tokens": 0, "cached_input_tokens": 0, "output_tokens": 0, "cached_output_tokens": 0}
+        for usage_obj in turn_usage_map.values():
+            for key in usage_totals:
+                usage_totals[key] += int(usage_obj.get(key) or 0)
 
     return {"codex_thread_id": thread_id, "model": model, "usage": usage_totals}
 
@@ -122,6 +163,27 @@ def _read_last_seq(path: Path) -> int:
     return 0
 
 
+def _append_status_line(*, payload: dict[str, Any]) -> bool:
+    try:
+        log_path = job_path("logs", "agent_status.jsonl")
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with log_path.open("ab") as f:
+            f.write((json.dumps(payload, ensure_ascii=False) + "\n").encode("utf-8"))
+    except Exception:
+        return False
+    return True
+
+
+def _next_status_seq() -> int:
+    global _STATUS_SEQ
+    log_path = job_path("logs", "agent_status.jsonl")
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    if _STATUS_SEQ is None:
+        _STATUS_SEQ = _read_last_seq(log_path)
+    _STATUS_SEQ += 1
+    return _STATUS_SEQ
+
+
 def status_update(*, stage: str, summary: str, level: str = "info", progress: int | None = None) -> None:
     """
     Append a status line for UI consumption (SSE via backend).
@@ -155,15 +217,9 @@ def status_update(*, stage: str, summary: str, level: str = "info", progress: in
     except Exception:
         job_id = ""
 
-    log_path = job_path("logs", "agent_status.jsonl")
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    if _STATUS_SEQ is None:
-        _STATUS_SEQ = _read_last_seq(log_path)
-    _STATUS_SEQ += 1
-
     line = {
         "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
-        "seq": _STATUS_SEQ,
+        "seq": _next_status_seq(),
         "job_id": job_id,
         "attempt": attempt,
         "stage": stage,
@@ -172,15 +228,44 @@ def status_update(*, stage: str, summary: str, level: str = "info", progress: in
         "summary": summary,
         "meta": {},
     }
-    try:
-        with log_path.open("ab") as f:
-            f.write((json.dumps(line, ensure_ascii=False) + "\n").encode("utf-8"))
-    except Exception:
+    if not _append_status_line(payload=line):
         return
     try:
         print(f"[status] stage={stage} summary={summary}", flush=True)
     except Exception:
         return
+
+
+def agent_delta_update(
+    *,
+    kind: str,
+    delta: str,
+    stage: str,
+    level: str = "info",
+    meta: dict[str, Any] | None = None,
+) -> None:
+    if not delta and kind != "reasoning_summary_boundary":
+        return
+    now = time.time()
+    line = {
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
+        "seq": _next_status_seq(),
+        "job_id": "",
+        "attempt": int(os.environ.get("ATTEMPT") or 1),
+        "stage": stage,
+        "level": level,
+        "progress": None,
+        "summary": delta[:200],
+        "kind": kind,
+        "delta": delta,
+        "meta": meta or {},
+    }
+    try:
+        job = json.loads(job_path("input", "job.json").read_text(encoding="utf-8"))
+        line["job_id"] = str(job.get("job_id") or "")
+    except Exception:
+        line["job_id"] = ""
+    _append_status_line(payload=line)
 
 
 def has_cjk_text(text: str) -> bool:
@@ -294,7 +379,7 @@ def normalize_reasoning_effort(value: Any) -> ReasoningEffort:
     return "medium"
 
 
-def run_codex(
+def _run_codex_exec(
     *,
     prompt: str,
     model: str,
@@ -414,6 +499,376 @@ def run_codex(
                 # Best-effort terminal output.
                 pass
         return int(proc.wait() or 0)
+
+
+def _run_codex_appserver(
+    *,
+    prompt: str,
+    model: str,
+    search_mode: Literal["disabled", "cached", "live"],
+    reasoning_effort: ReasoningEffort,
+    schema_path: Path,
+    jsonl_path: Path,
+    last_message_path: Path,
+) -> int:
+    cmd = ["codex", "app-server"]
+    proc = subprocess.Popen(
+        cmd,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    assert proc.stdin is not None
+    assert proc.stdout is not None
+
+    schema_obj = json.loads(schema_path.read_text(encoding="utf-8"))
+    request_id = 0
+    thread_id = ""
+    turn_id = ""
+    assistant_text = ""
+    usage_last = {"input_tokens": 0, "cached_input_tokens": 0, "output_tokens": 0, "cached_output_tokens": 0}
+    reasoning_buf = ""
+    reasoning_meta: dict[str, Any] = {}
+    message_buf = ""
+    command_buf = ""
+
+    def _flush_agent_delta(*, kind: str, stage: str, force: bool = False) -> None:
+        nonlocal reasoning_buf, reasoning_meta, message_buf, command_buf
+        if kind == "reasoning_summary_delta":
+            if not reasoning_buf:
+                return
+            agent_delta_update(kind=kind, delta=reasoning_buf, stage=stage, meta=(reasoning_meta or None))
+            reasoning_buf = ""
+            reasoning_meta = {}
+            return
+        if kind == "agent_message_delta":
+            if not message_buf:
+                return
+            if not force and len(message_buf) < 120 and not any(x in message_buf for x in ("\n", "。", "！", "？", ".", "!", "?")):
+                return
+            agent_delta_update(kind=kind, delta=message_buf, stage=stage)
+            message_buf = ""
+            return
+        if kind == "command_output_delta":
+            if not command_buf:
+                return
+            if not force and len(command_buf) < 200 and "\n" not in command_buf:
+                return
+            agent_delta_update(kind=kind, delta=command_buf, stage=stage)
+            command_buf = ""
+
+    def _send_request(method: str, params: dict[str, Any]) -> int:
+        nonlocal request_id
+        request_id += 1
+        req = {"jsonrpc": "2.0", "id": request_id, "method": method, "params": params}
+        proc.stdin.write(json.dumps(req, ensure_ascii=False) + "\n")
+        proc.stdin.flush()
+        return request_id
+
+    def _to_usage(raw: dict[str, Any]) -> dict[str, int]:
+        return {
+            "input_tokens": int(raw.get("input_tokens") or raw.get("inputTokens") or 0),
+            "cached_input_tokens": int(raw.get("cached_input_tokens") or raw.get("cachedInputTokens") or 0),
+            "output_tokens": int(raw.get("output_tokens") or raw.get("outputTokens") or 0),
+            "cached_output_tokens": int(raw.get("cached_output_tokens") or raw.get("cachedOutputTokens") or 0),
+        }
+
+    def _to_int_or_none(value: Any) -> int | None:
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str):
+            v = value.strip()
+            if not v:
+                return None
+            try:
+                return int(v)
+            except Exception:
+                return None
+        return None
+
+    try:
+        with jsonl_path.open("w", encoding="utf-8") as out:
+            init_id = _send_request(
+                "initialize",
+                {
+                    "clientInfo": {"name": "realmoi-runner", "title": "realmoi runner", "version": "0.1.0"},
+                    "capabilities": {"experimentalApi": True},
+                },
+            )
+
+            while True:
+                line = proc.stdout.readline()
+                if not line:
+                    if proc.poll() is not None:
+                        raise RuntimeError("appserver_exited_before_initialize")
+                    continue
+                s = line.strip()
+                if not s:
+                    continue
+                out.write(s + "\n")
+                out.flush()
+                try:
+                    obj = json.loads(s)
+                except Exception:
+                    print(s, flush=True)
+                    continue
+                if obj.get("id") == init_id and "error" in obj:
+                    raise RuntimeError(f"appserver_initialize_failed:{obj.get('error')}")
+                if obj.get("id") == init_id and "result" in obj:
+                    break
+
+            config_map: dict[str, Any] = {"model_reasoning_effort": reasoning_effort}
+            if search_mode in ("disabled", "cached", "live"):
+                config_map["web_search"] = search_mode
+            thread_id_req = _send_request(
+                "thread/start",
+                {
+                    "model": model,
+                    "modelProvider": None,
+                    "cwd": str(JOB_DIR.resolve()),
+                    "approvalPolicy": "never",
+                    "sandbox": "danger-full-access",
+                    "config": config_map,
+                    "baseInstructions": None,
+                    "developerInstructions": None,
+                    "personality": None,
+                    "ephemeral": True,
+                    "experimentalRawEvents": False,
+                },
+            )
+
+            while not thread_id:
+                line = proc.stdout.readline()
+                if not line:
+                    if proc.poll() is not None:
+                        raise RuntimeError("appserver_exited_before_thread")
+                    continue
+                s = line.strip()
+                if not s:
+                    continue
+                out.write(s + "\n")
+                out.flush()
+                try:
+                    obj = json.loads(s)
+                except Exception:
+                    print(s, flush=True)
+                    continue
+                if obj.get("id") == thread_id_req and "error" in obj:
+                    raise RuntimeError(f"appserver_thread_start_failed:{obj.get('error')}")
+                if obj.get("id") == thread_id_req and "result" in obj:
+                    result = obj.get("result") if isinstance(obj.get("result"), dict) else {}
+                    thread = result.get("thread") if isinstance(result.get("thread"), dict) else {}
+                    thread_id = str(thread.get("id") or "")
+                    model_from_result = str(result.get("model") or model)
+                    out.write(
+                        json.dumps({"type": "thread.started", "thread_id": thread_id, "model": model_from_result}, ensure_ascii=False)
+                        + "\n"
+                    )
+                    out.flush()
+                    break
+
+            if not thread_id:
+                raise RuntimeError("appserver_thread_id_missing")
+
+            turn_id_req = _send_request(
+                "turn/start",
+                {
+                    "threadId": thread_id,
+                    "input": [{"type": "text", "text": prompt, "text_elements": []}],
+                    "cwd": None,
+                    "approvalPolicy": None,
+                    "sandboxPolicy": None,
+                    "model": None,
+                    "effort": reasoning_effort,
+                    "summary": None,
+                    "personality": None,
+                    "outputSchema": schema_obj,
+                    "collaborationMode": None,
+                },
+            )
+            saw_turn_started = False
+
+            while True:
+                line = proc.stdout.readline()
+                if not line:
+                    if proc.poll() is not None:
+                        raise RuntimeError("appserver_exited_before_turn_completed")
+                    continue
+                s = line.strip()
+                if not s:
+                    continue
+                out.write(s + "\n")
+                out.flush()
+                try:
+                    obj = json.loads(s)
+                except Exception:
+                    print(s, flush=True)
+                    continue
+
+                if obj.get("id") == turn_id_req and "error" in obj:
+                    raise RuntimeError(f"appserver_turn_start_failed:{obj.get('error')}")
+                if obj.get("id") == turn_id_req and "result" in obj:
+                    continue
+
+                method = str(obj.get("method") or "")
+                params = obj.get("params") if isinstance(obj.get("params"), dict) else {}
+
+                if method == "error":
+                    message = str(params.get("message") or "unknown_error")
+                    raise RuntimeError(f"appserver_error:{message}")
+                if method == "turn/started":
+                    turn = params.get("turn") if isinstance(params.get("turn"), dict) else {}
+                    turn_id = str(turn.get("id") or "")
+                    saw_turn_started = True
+                    continue
+                if not saw_turn_started:
+                    continue
+
+                if method == "item/reasoning/summaryTextDelta":
+                    delta = str(params.get("delta") or "")
+                    summary_index = _to_int_or_none(params.get("summaryIndex"))
+                    reasoning_meta = {"source": "summary_text_delta"}
+                    if summary_index is not None:
+                        reasoning_meta["summary_index"] = summary_index
+                    reasoning_buf += delta
+                    _flush_agent_delta(kind="reasoning_summary_delta", stage="analysis")
+                    continue
+                if method == "item/reasoning/summaryPartAdded":
+                    _flush_agent_delta(kind="reasoning_summary_delta", stage="analysis", force=True)
+                    boundary_meta: dict[str, Any] = {"source": "summary_part_added", "boundary": True}
+                    summary_index = _to_int_or_none(params.get("summaryIndex"))
+                    if summary_index is not None:
+                        boundary_meta["summary_index"] = summary_index
+                    agent_delta_update(
+                        kind="reasoning_summary_boundary",
+                        delta="",
+                        stage="analysis",
+                        meta=boundary_meta,
+                    )
+                    continue
+                if method == "item/reasoning/textDelta":
+                    delta = str(params.get("delta") or "")
+                    reasoning_meta = {"source": "reasoning_text_delta"}
+                    reasoning_buf += delta
+                    _flush_agent_delta(kind="reasoning_summary_delta", stage="analysis")
+                    continue
+                if method == "item/agentMessage/delta":
+                    delta = str(params.get("delta") or "")
+                    assistant_text += delta
+                    message_buf += delta
+                    _flush_agent_delta(kind="agent_message_delta", stage="done")
+                    continue
+                if method == "item/commandExecution/outputDelta":
+                    delta = str(params.get("delta") or "")
+                    if delta:
+                        print(delta, end="", flush=True)
+                    command_buf += delta
+                    _flush_agent_delta(kind="command_output_delta", stage="coding")
+                    continue
+                if method == "item/started":
+                    item = params.get("item") if isinstance(params.get("item"), dict) else {}
+                    if str(item.get("type") or "") == "commandExecution":
+                        command_text = str(item.get("command") or "")
+                        if command_text:
+                            print(f"[codex] $ {command_text}", flush=True)
+                    continue
+                if method == "item/completed":
+                    item = params.get("item") if isinstance(params.get("item"), dict) else {}
+                    if str(item.get("type") or "") == "commandExecution":
+                        exit_code = item.get("exitCode")
+                        if exit_code is not None:
+                            print(f"[codex] exit={int(exit_code)}", flush=True)
+                        _flush_agent_delta(kind="command_output_delta", stage="coding", force=True)
+                        continue
+                    if str(item.get("type") or "") == "agentMessage":
+                        text = str(item.get("text") or "")
+                        if text:
+                            assistant_text = text
+                        continue
+                if method == "thread/tokenUsage/updated":
+                    token_usage = params.get("tokenUsage") if isinstance(params.get("tokenUsage"), dict) else {}
+                    usage_raw = token_usage.get("last") or token_usage.get("total")
+                    if isinstance(usage_raw, dict):
+                        usage_last = _to_usage(usage_raw)
+                    continue
+                if method == "turn/completed":
+                    _flush_agent_delta(kind="reasoning_summary_delta", stage="analysis", force=True)
+                    _flush_agent_delta(kind="agent_message_delta", stage="done", force=True)
+                    _flush_agent_delta(kind="command_output_delta", stage="coding", force=True)
+                    out.write(json.dumps({"type": "turn.completed", "usage": usage_last}, ensure_ascii=False) + "\n")
+                    out.flush()
+                    print(
+                        "[codex] 完成，Token统计：输入={input_tokens} 缓存输入={cached_input_tokens} 输出={output_tokens} 缓存输出={cached_output_tokens}".format(
+                            **usage_last
+                        ),
+                        flush=True,
+                    )
+                    break
+
+        if not assistant_text.strip():
+            raise RuntimeError("appserver_empty_agent_message")
+        write_text(last_message_path, assistant_text)
+        return 0
+    finally:
+        try:
+            proc.terminate()
+            proc.wait(timeout=2)
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+
+
+def run_codex(
+    *,
+    prompt: str,
+    model: str,
+    search_mode: Literal["disabled", "cached", "live"],
+    reasoning_effort: ReasoningEffort,
+    schema_path: Path,
+    jsonl_path: Path,
+    last_message_path: Path,
+) -> int:
+    transport = str(os.environ.get("REALMOI_CODEX_TRANSPORT") or "appserver").strip().lower()
+    prefer_appserver = transport in ("appserver", "auto", "")
+
+    if prefer_appserver:
+        try:
+            return _run_codex_appserver(
+                prompt=prompt,
+                model=model,
+                search_mode=search_mode,
+                reasoning_effort=reasoning_effort,
+                schema_path=schema_path,
+                jsonl_path=jsonl_path,
+                last_message_path=last_message_path,
+            )
+        except Exception as e:
+            print(f"[generate] appserver failed, fallback to exec: {e}", flush=True)
+            if transport == "appserver":
+                return _run_codex_exec(
+                    prompt=prompt,
+                    model=model,
+                    search_mode=search_mode,
+                    reasoning_effort=reasoning_effort,
+                    schema_path=schema_path,
+                    jsonl_path=jsonl_path,
+                    last_message_path=last_message_path,
+                )
+
+    return _run_codex_exec(
+        prompt=prompt,
+        model=model,
+        search_mode=search_mode,
+        reasoning_effort=reasoning_effort,
+        schema_path=schema_path,
+        jsonl_path=jsonl_path,
+        last_message_path=last_message_path,
+    )
 
 
 def main() -> int:

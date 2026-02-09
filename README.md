@@ -31,6 +31,8 @@ make dev
 - `make dev` 只做本地启动（Python venv + npm dev），不会执行 Docker 构建。
 - Job 执行默认走本机 runner（`REALMOI_RUNNER_EXECUTOR=local`）。
 - 如需切换到 Docker runner，设置 `REALMOI_RUNNER_EXECUTOR=docker`，并确保 `REALMOI_RUNNER_IMAGE` 可用。
+- 默认 `REALMOI_RUNNER_CODEX_TRANSPORT=appserver`，前端优先使用 `agent_status.sse` 展示真正的实时思考/执行增量；若 appserver 失败会自动回退 `exec`。
+- `codex app-server` 的 `summaryTextDelta` 是流式增量（不保证天然按句子边界推送）；当前实现会结合 `summaryPartAdded + summaryIndex + 标点` 在前端做断句缓冲，保证思考行可读且持续实时。
 
 启动后可在管理后台 `http://localhost:3000/admin/upstream-models` 直接新增/编辑上游渠道配置（持久化到数据库），并按渠道聚合查看上游模型列表。
 
@@ -57,6 +59,7 @@ export REALMOI_ADMIN_USERNAME="admin"
 export REALMOI_ADMIN_PASSWORD="admin-password-123"
 export REALMOI_RUNNER_EXECUTOR="local"
 export REALMOI_RUNNER_IMAGE="realmoi/realmoi-runner:latest"
+export REALMOI_RUNNER_CODEX_TRANSPORT="appserver"
 
 uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
 ```

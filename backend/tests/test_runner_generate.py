@@ -1,7 +1,10 @@
+import json
+
 from runner.app.runner_generate import (
     explanation_fields_are_chinese,
     has_cjk_text,
     normalize_reasoning_effort,
+    parse_usage,
     summarize_reasoning_text,
 )
 
@@ -38,3 +41,42 @@ def test_normalize_reasoning_effort_defaults_to_medium_for_invalid_value() -> No
     assert normalize_reasoning_effort("xhigh") == "xhigh"
     assert normalize_reasoning_effort("unexpected") == "medium"
     assert normalize_reasoning_effort(None) == "medium"
+
+
+def test_parse_usage_supports_appserver_token_usage(tmp_path) -> None:
+    p = tmp_path / "appserver.jsonl"
+    lines = [
+        {
+            "id": 2,
+            "result": {
+                "thread": {"id": "thread-1"},
+                "model": "gpt-5.2-codex",
+            },
+        },
+        {
+            "method": "thread/tokenUsage/updated",
+            "params": {
+                "threadId": "thread-1",
+                "turnId": "0",
+                "tokenUsage": {
+                    "last": {
+                        "inputTokens": 100,
+                        "cachedInputTokens": 20,
+                        "outputTokens": 30,
+                        "reasoningOutputTokens": 0,
+                        "totalTokens": 130,
+                    }
+                },
+            },
+        },
+    ]
+    p.write_text("\n".join(json.dumps(x, ensure_ascii=False) for x in lines) + "\n", encoding="utf-8")
+    usage = parse_usage(p)
+    assert usage["codex_thread_id"] == "thread-1"
+    assert usage["model"] == "gpt-5.2-codex"
+    assert usage["usage"] == {
+        "input_tokens": 100,
+        "cached_input_tokens": 20,
+        "output_tokens": 30,
+        "cached_output_tokens": 0,
+    }
