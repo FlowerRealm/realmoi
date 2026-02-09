@@ -390,6 +390,122 @@ def normalize_reasoning_effort(value: Any) -> ReasoningEffort:
     return "medium"
 
 
+def _normalize_item_type(value: Any) -> str:
+    return str(value or "").replace("_", "").strip().lower()
+
+
+def _extract_text_from_content(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, dict):
+        direct = str(
+            content.get("text")
+            or content.get("output_text")
+            or content.get("outputText")
+            or content.get("content")
+            or content.get("value")
+            or ""
+        )
+        return direct
+    if not isinstance(content, list):
+        return ""
+
+    chunks: list[str] = []
+    for part in content:
+        if isinstance(part, str):
+            chunks.append(part)
+            continue
+        if not isinstance(part, dict):
+            continue
+        piece = str(
+            part.get("text")
+            or part.get("output_text")
+            or part.get("outputText")
+            or part.get("content")
+            or part.get("value")
+            or ""
+        )
+        if piece:
+            chunks.append(piece)
+    return "".join(chunks)
+
+
+def _extract_text_from_item(item: Any) -> str:
+    if not isinstance(item, dict):
+        return ""
+    direct = str(item.get("text") or item.get("output_text") or item.get("outputText") or "")
+    if direct:
+        return direct
+    content_text = _extract_text_from_content(item.get("content"))
+    if content_text:
+        return content_text
+    message = item.get("message")
+    if isinstance(message, str):
+        return message
+    if isinstance(message, dict):
+        nested = str(message.get("text") or "")
+        if nested:
+            return nested
+        nested_content = _extract_text_from_content(message.get("content"))
+        if nested_content:
+            return nested_content
+    return ""
+
+
+def _extract_text_from_turn(turn: Any) -> str:
+    if not isinstance(turn, dict):
+        return ""
+    direct = str(
+        turn.get("text")
+        or turn.get("output_text")
+        or turn.get("outputText")
+        or turn.get("assistant_text")
+        or ""
+    )
+    if direct:
+        return direct
+
+    output_text = _extract_text_from_content(turn.get("output"))
+    if output_text:
+        return output_text
+
+    items = turn.get("items")
+    if not isinstance(items, list):
+        return ""
+
+    chunks: list[str] = []
+    for raw_item in items:
+        item = raw_item if isinstance(raw_item, dict) else {}
+        if "item" in item and isinstance(item.get("item"), dict):
+            item = cast(dict[str, Any], item.get("item"))
+        item_type = _normalize_item_type(item.get("type"))
+        if item_type in {"agentmessage", "message", "assistantmessage"}:
+            text = _extract_text_from_item(item)
+            if text:
+                chunks.append(text)
+    return "".join(chunks)
+
+
+def _extract_item_from_params(params: dict[str, Any]) -> dict[str, Any]:
+    direct = params.get("item")
+    if isinstance(direct, dict):
+        return cast(dict[str, Any], direct)
+    msg = params.get("msg")
+    if isinstance(msg, dict) and isinstance(msg.get("item"), dict):
+        return cast(dict[str, Any], msg.get("item"))
+    return {}
+
+
+def _extract_delta_from_params(params: dict[str, Any]) -> str:
+    delta = str(params.get("delta") or "")
+    if delta:
+        return delta
+    msg = params.get("msg")
+    if isinstance(msg, dict):
+        return str(msg.get("delta") or "")
+    return ""
+
+
 def _run_codex_exec(
     *,
     prompt: str,
@@ -540,11 +656,13 @@ def _run_codex_appserver(
     thread_id = ""
     turn_id = ""
     assistant_text = ""
+    assistant_text_fallback = ""
     usage_last = {"input_tokens": 0, "cached_input_tokens": 0, "output_tokens": 0, "cached_output_tokens": 0}
     reasoning_buf = ""
     reasoning_meta: dict[str, Any] = {}
     message_buf = ""
     command_buf = ""
+    saw_agent_message_delta = False
 
     def _flush_agent_delta(*, kind: str, stage: str, force: bool = False) -> None:
         nonlocal reasoning_buf, reasoning_meta, message_buf, command_buf
@@ -722,6 +840,10 @@ def _run_codex_appserver(
                 if obj.get("id") == turn_id_req and "error" in obj:
                     raise RuntimeError(f"appserver_turn_start_failed:{obj.get('error')}")
                 if obj.get("id") == turn_id_req and "result" in obj:
+                    result = obj.get("result") if isinstance(obj.get("result"), dict) else {}
+                    extracted = _extract_text_from_turn(result.get("turn"))
+                    if extracted:
+                        assistant_text = extracted
                     continue
 
                 method = str(obj.get("method") or "")
@@ -738,7 +860,7 @@ def _run_codex_appserver(
                 if not saw_turn_started:
                     continue
 
-                if method == "item/reasoning/summaryTextDelta":
+                if method in ("item/reasoning/summaryTextDelta", "item/reasoning/summary_text_delta"):
                     delta = str(params.get("delta") or "")
                     summary_index = _to_int_or_none(params.get("summaryIndex"))
                     reasoning_meta = {"source": "summary_text_delta"}
@@ -747,7 +869,7 @@ def _run_codex_appserver(
                     reasoning_buf += delta
                     _flush_agent_delta(kind="reasoning_summary_delta", stage="analysis")
                     continue
-                if method == "item/reasoning/summaryPartAdded":
+                if method in ("item/reasoning/summaryPartAdded", "item/reasoning/summary_part_added"):
                     _flush_agent_delta(kind="reasoning_summary_delta", stage="analysis", force=True)
                     boundary_meta: dict[str, Any] = {"source": "summary_part_added", "boundary": True}
                     summary_index = _to_int_or_none(params.get("summaryIndex"))
@@ -760,52 +882,72 @@ def _run_codex_appserver(
                         meta=boundary_meta,
                     )
                     continue
-                if method == "item/reasoning/textDelta":
+                if method in ("item/reasoning/textDelta", "item/reasoning/text_delta"):
                     delta = str(params.get("delta") or "")
                     reasoning_meta = {"source": "reasoning_text_delta"}
                     reasoning_buf += delta
                     _flush_agent_delta(kind="reasoning_summary_delta", stage="analysis")
                     continue
-                if method == "item/agentMessage/delta":
-                    delta = str(params.get("delta") or "")
+                if method in ("item/agentMessage/delta", "item/agent_message/delta"):
+                    delta = _extract_delta_from_params(params)
                     assistant_text += delta
                     message_buf += delta
+                    saw_agent_message_delta = True
                     _flush_agent_delta(kind="agent_message_delta", stage="done")
                     continue
-                if method == "item/commandExecution/outputDelta":
+                if method in ("codex/event/agent_message_delta", "codex/event/agent_message_content_delta"):
+                    delta = _extract_delta_from_params(params)
+                    if delta:
+                        assistant_text_fallback += delta
+                    continue
+                if method in ("item/commandExecution/outputDelta", "item/command_execution/output_delta"):
                     delta = str(params.get("delta") or "")
                     if delta:
                         print(delta, end="", flush=True)
                     command_buf += delta
                     _flush_agent_delta(kind="command_output_delta", stage="coding")
                     continue
-                if method == "item/started":
-                    item = params.get("item") if isinstance(params.get("item"), dict) else {}
-                    if str(item.get("type") or "") == "commandExecution":
+                if method in ("item/started", "item.started"):
+                    item = _extract_item_from_params(params)
+                    if _normalize_item_type(item.get("type")) == "commandexecution":
                         command_text = str(item.get("command") or "")
                         if command_text:
                             print(f"[codex] $ {command_text}", flush=True)
                     continue
-                if method == "item/completed":
-                    item = params.get("item") if isinstance(params.get("item"), dict) else {}
-                    if str(item.get("type") or "") == "commandExecution":
+                if method in ("item/completed", "item.completed"):
+                    item = _extract_item_from_params(params)
+                    item_type = _normalize_item_type(item.get("type"))
+                    if item_type == "commandexecution":
                         exit_code = item.get("exitCode")
+                        if exit_code is None:
+                            exit_code = item.get("exit_code")
                         if exit_code is not None:
                             print(f"[codex] exit={int(exit_code)}", flush=True)
                         _flush_agent_delta(kind="command_output_delta", stage="coding", force=True)
                         continue
-                    if str(item.get("type") or "") == "agentMessage":
-                        text = str(item.get("text") or "")
+                    if item_type in {"agentmessage", "assistantmessage", "message"}:
+                        text = _extract_text_from_item(item)
                         if text:
                             assistant_text = text
+                            if not saw_agent_message_delta:
+                                message_buf += text
+                                _flush_agent_delta(kind="agent_message_delta", stage="done", force=True)
                         continue
-                if method == "thread/tokenUsage/updated":
+                if method in ("thread/tokenUsage/updated", "thread/token_usage/updated"):
                     token_usage = params.get("tokenUsage") if isinstance(params.get("tokenUsage"), dict) else {}
                     usage_raw = token_usage.get("last") or token_usage.get("total")
                     if isinstance(usage_raw, dict):
                         usage_last = _to_usage(usage_raw)
                     continue
-                if method == "turn/completed":
+                if method in ("turn/completed", "turn.completed"):
+                    turn = params.get("turn") if isinstance(params.get("turn"), dict) else {}
+                    extracted = _extract_text_from_turn(turn)
+                    if extracted:
+                        assistant_text = extracted
+                    if not assistant_text.strip() and assistant_text_fallback.strip():
+                        assistant_text = assistant_text_fallback
+                    if assistant_text and not saw_agent_message_delta:
+                        message_buf += assistant_text
                     _flush_agent_delta(kind="reasoning_summary_delta", stage="analysis", force=True)
                     _flush_agent_delta(kind="agent_message_delta", stage="done", force=True)
                     _flush_agent_delta(kind="command_output_delta", stage="coding", force=True)

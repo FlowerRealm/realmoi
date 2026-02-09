@@ -3,6 +3,9 @@ import os
 from pathlib import Path
 
 from runner.app.runner_generate import (
+    _extract_delta_from_params,
+    _extract_item_from_params,
+    _extract_text_from_turn,
     ensure_runner_generate_import_path,
     explanation_fields_are_chinese,
     has_cjk_text,
@@ -90,3 +93,39 @@ def test_ensure_runner_generate_import_path_sets_pythonpath(monkeypatch) -> None
     ensure_runner_generate_import_path()
     module_dir = str(Path(__file__).resolve().parents[2] / "runner" / "app")
     assert os.environ.get("PYTHONPATH") == module_dir
+
+
+def test_extract_text_from_turn_supports_nested_agent_items() -> None:
+    turn = {
+        "id": "turn-1",
+        "items": [
+            {"type": "reasoning", "text": "..."},  # should be ignored
+            {
+                "type": "agentMessage",
+                "content": [
+                    {"type": "text", "text": '{"main_cpp":"int main(){return 0;}"}'},
+                ],
+            },
+        ],
+    }
+    assert _extract_text_from_turn(turn) == '{"main_cpp":"int main(){return 0;}"}'
+
+
+def test_extract_item_from_params_supports_codex_event_wrapper() -> None:
+    params = {
+        "msg": {
+            "type": "item_completed",
+            "item": {
+                "type": "command_execution",
+                "command": "ls -la",
+            },
+        }
+    }
+    item = _extract_item_from_params(params)
+    assert item["type"] == "command_execution"
+    assert item["command"] == "ls -la"
+
+
+def test_extract_delta_from_params_prefers_nested_msg_delta() -> None:
+    params = {"msg": {"delta": "partial response"}}
+    assert _extract_delta_from_params(params) == "partial response"
