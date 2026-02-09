@@ -211,15 +211,15 @@ def delete_upstream_channel(_: AdminUserDep, db: DbDep, channel: str):
     if row is None:
         http_error(404, "not_found", "Upstream channel not found")
 
-    used_count = db.scalar(
-        select(func.count()).select_from(ModelPricing).where(ModelPricing.upstream_channel == channel_key)
-    ) or 0
+    bound_models = db.scalars(select(ModelPricing).where(ModelPricing.upstream_channel == channel_key)).all()
+    used_count = len(bound_models)
     if used_count > 0:
-        http_error(409, "conflict", f"Channel in use by {used_count} model(s)")
+        for model_pricing in bound_models:
+            model_pricing.upstream_channel = ""
 
     db.delete(row)
     db.commit()
-    return {"ok": True}
+    return {"ok": True, "detached_models": used_count}
 
 
 @router.get("/upstream/models")

@@ -178,7 +178,7 @@ def test_upstream_channel_can_be_deleted_when_unused(client):
     assert channel not in channels
 
 
-def test_upstream_channel_delete_in_use_returns_409(client):
+def test_upstream_channel_delete_in_use_detaches_models(client):
     admin_headers = _login_admin_headers(client)
     suffix = uuid4().hex[:6]
     channel = f"openai-used-{suffix}"
@@ -209,10 +209,20 @@ def test_upstream_channel_delete_in_use_returns_409(client):
     assert pricing_resp.status_code == 200
 
     delete_resp = client.delete(f"/api/admin/upstream/channels/{channel}", headers=admin_headers)
-    assert delete_resp.status_code == 409
-    err = delete_resp.json()["error"]
-    assert err["code"] == "conflict"
-    assert "Channel in use" in err["message"]
+    assert delete_resp.status_code == 200
+    payload = delete_resp.json()
+    assert payload["ok"] is True
+    assert payload["detached_models"] == 1
+
+    list_channels_resp = client.get("/api/admin/upstream/channels", headers=admin_headers)
+    assert list_channels_resp.status_code == 200
+    channels = {x["channel"] for x in list_channels_resp.json()}
+    assert channel not in channels
+
+    list_pricing_resp = client.get("/api/admin/pricing/models", headers=admin_headers)
+    assert list_pricing_resp.status_code == 200
+    model_row = next(x for x in list_pricing_resp.json() if x["model"] == model)
+    assert model_row["upstream_channel"] == ""
 
 
 def test_upstream_channel_delete_not_found_returns_404(client):
