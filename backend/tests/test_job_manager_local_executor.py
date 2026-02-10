@@ -184,6 +184,7 @@ def test_independent_judge_claim_and_release_lock(client, monkeypatch, tmp_path)
     assert claimed is not None
     assert claimed["job_id"] == job_id
     assert Path(claimed["lock_path"]).exists()
+    assert str(claimed.get("claim_id") or "")
 
     def _fake_run_job_thread(*, job_id: str, owner_user_id: str) -> None:  # noqa: ARG001
         paths = get_job_paths(jobs_root=tmp_path, job_id=job_id)
@@ -192,11 +193,8 @@ def test_independent_judge_claim_and_release_lock(client, monkeypatch, tmp_path)
         save_state(paths.state_json, state)
 
     monkeypatch.setattr(jm, "_run_job_thread", _fake_run_job_thread)
-    jm.run_claimed_job(
-        job_id=claimed["job_id"],
-        owner_user_id=claimed["owner_user_id"],
-        lock_path=claimed["lock_path"],
-    )
+    jm.run_claimed_job(job_id=claimed["job_id"], owner_user_id=claimed["owner_user_id"])
+    assert jm.release_judge_claim(job_id=claimed["job_id"], claim_id=str(claimed["claim_id"])) is True
 
     assert not Path(claimed["lock_path"]).exists()
     state = load_state(get_job_paths(jobs_root=tmp_path, job_id=job_id).state_json)
@@ -265,3 +263,46 @@ def test_cancel_job_stops_local_pid_from_state(client, monkeypatch, tmp_path):  
     finally:
         if proc.poll() is None:
             proc.kill()
+
+
+def test_generate_bundle_provider_avoids_db_access(client, monkeypatch, tmp_path):  # noqa: ARG001
+    from backend.app.services import job_manager as job_manager_module  # noqa: WPS433
+    from backend.app.services.job_paths import get_job_paths  # noqa: WPS433
+    from backend.app.settings import SETTINGS  # noqa: WPS433
+
+    monkeypatch.setattr(SETTINGS, "runner_executor", "local")
+    monkeypatch.setattr(SETTINGS, "mock_mode", True)
+
+    job_id = "job-local-bundle-provider"
+    _write_job_and_state(jobs_root=tmp_path, job_id=job_id, owner_user_id="u1", model="gpt-local")
+    paths = get_job_paths(jobs_root=tmp_path, job_id=job_id)
+
+    class _BoomSessionLocal:  # noqa: WPS431
+        def __call__(self, *args, **kwargs):  # noqa: ARG002
+            raise AssertionError("SessionLocal should not be used when provider is set")
+
+    monkeypatch.setattr(job_manager_module, "SessionLocal", _BoomSessionLocal())
+
+    cfg = job_manager_module.build_effective_config(user_overrides_toml="")
+    bundle = job_manager_module.GenerateBundle(
+        effective_config_toml=cfg.effective_config_toml,
+        auth_json_bytes=b"{}\n",
+        openai_base_url="https://example.com",
+        mock_mode=True,
+    )
+
+    def _provider(**kwargs):  # noqa: ARG001
+        return bundle
+
+    def _usage_reporter(**kwargs):  # noqa: ARG001
+        return
+
+    jm = job_manager_module.JobManager(
+        jobs_root=tmp_path,
+        generate_bundle_provider=_provider,
+        usage_reporter=_usage_reporter,
+    )
+
+    jm._run_generate(paths=paths, owner_user_id="u1", attempt=1, prompt_mode="generate")
+    state = json.loads(paths.state_json.read_text(encoding="utf-8"))
+    assert state["containers"]["generate"]["exit_code"] == 0

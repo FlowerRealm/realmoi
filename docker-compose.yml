@@ -19,7 +19,8 @@ services:
       REALMOI_ADMIN_PASSWORD: ${REALMOI_ADMIN_PASSWORD:-admin-password-123}
       REALMOI_RUNNER_EXECUTOR: ${REALMOI_RUNNER_EXECUTOR:-docker}
       REALMOI_RUNNER_IMAGE: ${REALMOI_RUNNER_IMAGE:-realmoi/realmoi-runner:latest}
-      REALMOI_JUDGE_MODE: ${REALMOI_JUDGE_MODE:-embedded}
+      REALMOI_JUDGE_MODE: ${REALMOI_JUDGE_MODE:-independent}
+      REALMOI_JUDGE_MCP_TOKEN: ${REALMOI_JUDGE_MCP_TOKEN:-dev-judge-token-change-me}
     volumes:
       - realmoi_data:/app/data
       - realmoi_jobs:/app/jobs
@@ -49,6 +50,8 @@ services:
       REALMOI_JUDGE_MODE: independent
       REALMOI_JUDGE_MACHINE_ID: ${REALMOI_JUDGE_MACHINE_ID:-judge-1}
       REALMOI_JUDGE_POLL_INTERVAL_MS: ${REALMOI_JUDGE_POLL_INTERVAL_MS:-1000}
+      REALMOI_JUDGE_API_BASE_URL: ${REALMOI_JUDGE_API_BASE_URL:-http://backend:8000/api}
+      REALMOI_JUDGE_MCP_TOKEN: ${REALMOI_JUDGE_MCP_TOKEN:-dev-judge-token-change-me}
     volumes:
       - realmoi_data:/app/data
       - realmoi_jobs:/app/jobs

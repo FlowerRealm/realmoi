@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { apiFetch, getErrorMessage } from "@/lib/api";
-import { useSession } from "@/lib/session";
+import { getErrorMessage } from "@/lib/api";
+import { getMcpClient } from "@/lib/mcp";
 import { GlassPanel } from "./GlassPanel";
 import { LiquidInput } from "./LiquidInput";
 import type { AssistantSession, ModelItem, PromptData } from "./types";
@@ -10,25 +10,13 @@ import type { AssistantSession, ModelItem, PromptData } from "./types";
 const MODELS_CACHE_STORAGE_KEY = "realmoi_admin_upstream_models_cache_v1";
 const MODELS_CACHE_TTL_MS = 180_000;
 
-type UpstreamChannelItem = {
-  channel: string;
-  is_enabled: boolean;
-  is_default: boolean;
-};
-
-type UpstreamModelsPayload = {
-  data?: Array<{ id?: string }>;
-};
-
-type CachedChannelFetchItem = {
-  channel: string;
-  payload: unknown | null;
-  errorText: string | null;
-};
-
 type CachedModelsSnapshot = {
   ts: number;
-  items: CachedChannelFetchItem[];
+  items: Array<{
+    channel: string;
+    payload: unknown | null;
+    errorText: string | null;
+  }>;
 };
 
 function toPrefixedModel(channel: string, model: string): ModelItem {
@@ -77,7 +65,7 @@ function extractModelsFromSnapshot(snapshot: CachedModelsSnapshot | null): Model
   const rows: ModelItem[] = [];
   snapshot.items.forEach((item) => {
     const channel = String(item.channel || "").trim();
-    const payload = item.payload as UpstreamModelsPayload;
+    const payload = item.payload as { data?: Array<{ id?: string }> };
     if (!channel || !Array.isArray(payload?.data)) return;
     payload.data.forEach((entry) => {
       const model = String(entry?.id || "").trim();
@@ -104,6 +92,19 @@ function writeModelsToCache(channelRows: Array<{ channel: string; models: string
   }
 }
 
+function snapshotRowsForCache(rows: ModelItem[]): Array<{ channel: string; models: string[] }> {
+  const grouped = new Map<string, string[]>();
+  rows.forEach((row) => {
+    const channel = String(row.upstream_channel || "").trim();
+    const model = String(row.model || "").trim();
+    if (!channel || !model) return;
+    const list = grouped.get(channel) ?? [];
+    list.push(model);
+    grouped.set(channel, list);
+  });
+  return Array.from(grouped.entries()).map(([channel, models]) => ({ channel, models }));
+}
+
 function initialCachedModels(): ModelItem[] {
   if (typeof window === "undefined") return [];
   return extractModelsFromSnapshot(readModelsSnapshot());
@@ -122,10 +123,8 @@ export function Portal({
   const [isInputExpanded, setIsInputExpanded] = useState(false);
   const [models, setModels] = useState<ModelItem[]>(initialCachedModels);
   const [modelsError, setModelsError] = useState<string | null>(null);
-  const { me, loading: sessionLoading } = useSession();
 
   useEffect(() => {
-    if (sessionLoading) return;
     let cancelled = false;
 
     const load = async () => {
@@ -136,61 +135,26 @@ export function Portal({
       if (cacheFresh) {
         return;
       }
-      if (me?.role === "admin") {
-        try {
-          const channels = await apiFetch<UpstreamChannelItem[]>("/admin/upstream/channels");
-          const enabledChannels = (channels || [])
-            .filter((item) => item.is_enabled || item.is_default)
-            .map((item) => item.channel)
-            .filter(Boolean);
-          if (enabledChannels.length > 0) {
-            const settled = await Promise.all(
-              enabledChannels.map(async (channel) => {
-                try {
-                  const query = new URLSearchParams();
-                  query.set("channel", channel);
-                  const payload = await apiFetch<UpstreamModelsPayload>(`/admin/upstream/models?${query.toString()}`);
-                  const ids = (Array.isArray(payload?.data) ? payload.data : [])
-                    .map((item) => String(item?.id || "").trim())
-                    .filter(Boolean);
-                  return { channel, models: ids };
-                } catch {
-                  return null;
-                }
-              })
-            );
-            const fromUpstream = settled.filter((item): item is { channel: string; models: string[] } => !!item);
-            const upstreamRows = normalizeModels(
-              fromUpstream.flatMap((item) => item.models.map((model) => toPrefixedModel(item.channel, model)))
-            );
-            if (upstreamRows.length > 0) {
-              writeModelsToCache(fromUpstream);
-              if (!cancelled) {
-                setModels(upstreamRows);
-                setModelsError(null);
-              }
-              return;
-            }
-          }
-        } catch {
-          // Ignore and fallback to /models.
-        }
-      }
 
       try {
-        const liveRows = normalizeModels(await apiFetch<ModelItem[]>("/models/live"));
+        const client = getMcpClient();
+        const livePayload = await client.callTool<{ items?: ModelItem[] }>("models.list", { live: true });
+        const liveRows = normalizeModels(livePayload?.items ?? []);
         if (cancelled) return;
         if (liveRows.length > 0) {
+          writeModelsToCache(snapshotRowsForCache(liveRows));
           setModels(liveRows);
           setModelsError(null);
           return;
         }
       } catch {
-        // Ignore and fallback to /models.
+        // Ignore and fallback to non-live list.
       }
 
       try {
-        const fallbackRows = normalizeModels(await apiFetch<ModelItem[]>("/models"));
+        const client = getMcpClient();
+        const fallbackPayload = await client.callTool<{ items?: ModelItem[] }>("models.list", { live: false });
+        const fallbackRows = normalizeModels(fallbackPayload?.items ?? []);
         if (cancelled) return;
         if (cachedModels.length > 0) {
           setModels(cachedModels);
@@ -198,6 +162,7 @@ export function Portal({
           return;
         }
         if (fallbackRows.length > 0) {
+          writeModelsToCache(snapshotRowsForCache(fallbackRows));
           setModels(fallbackRows);
           setModelsError(null);
           return;
@@ -220,7 +185,7 @@ export function Portal({
     return () => {
       cancelled = true;
     };
-  }, [me?.role, sessionLoading]);
+  }, []);
 
   const handleSend = (data: PromptData) => {
     setIsWarping(true);

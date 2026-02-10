@@ -21,9 +21,9 @@ hide_full_access_warning = true
 
 [mcp_servers.realmoi-status]
 command = "python3"
-args = ["-X", "utf8", "/app/realmoi_status_mcp.py"]
+args = ["-X", "utf8", "-m", "realmoi_status_mcp"]
 startup_timeout_sec = 10
-tool_timeout_sec = 60
+tool_timeout_sec = 180
 """
 
 

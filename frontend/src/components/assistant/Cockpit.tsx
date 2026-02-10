@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { apiFetch, API_BASE, getErrorMessage } from "@/lib/api";
-import { connectSse } from "@/lib/sse";
+import { getErrorMessage } from "@/lib/api";
+import { getMcpClient } from "@/lib/mcp";
 import { GlassPanel } from "./GlassPanel";
 import type { JobRun, JobState, Message, PromptData } from "./types";
 import { buildTestsZip } from "./testsZip";
@@ -112,6 +112,19 @@ function b64ToBytes(b64: string): Uint8Array {
   const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
   return bytes;
+}
+
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("read_blob_failed"));
+    reader.onload = () => {
+      const res = String(reader.result || "");
+      const idx = res.indexOf(",");
+      resolve(idx >= 0 ? res.slice(idx + 1) : res);
+    };
+    reader.readAsDataURL(blob);
+  });
 }
 
 function buildStatementWithUserMessage(statement: string, userMessage?: string): string {
@@ -257,6 +270,7 @@ function stageLabelZh(stage: string): string {
   if (s === "plan") return "方案";
   if (s === "search") return "检索";
   if (s === "coding") return "编码";
+  if (s === "test") return "测试";
   if (s === "repair") return "修复";
   if (s === "done") return "完成";
   if (s === "error") return "错误";
@@ -695,25 +709,23 @@ export function Cockpit({
     userMessage?: string;
     seedMainCpp?: string;
   }) => {
-    const fd = new FormData();
-    fd.set("model", prompt.model);
-    if (prompt.upstreamChannel) {
-      fd.set("upstream_channel", prompt.upstreamChannel);
-    }
-    fd.set("reasoning_effort", prompt.reasoningEffort || "medium");
-    fd.set("statement_md", buildStatementWithUserMessage(prompt.problemDescription, userMessage));
-    fd.set("current_code_cpp", seedMainCpp ?? prompt.code ?? "");
-    fd.set("time_limit_ms", String(prompt.timeLimitMs));
-    fd.set("memory_limit_mb", String(prompt.memoryLimitMb));
-
+    const client = getMcpClient();
     const zip = await buildTestsZip(prompt.testCases);
-    if (zip) {
-      fd.set("tests_zip", zip);
-      fd.set("tests_format", "in_out_pairs");
-    }
+    const testsZipB64 = zip ? await blobToBase64(zip) : "";
 
-    const created = await apiFetch<{ job_id: string }>("/jobs", { method: "POST", body: fd });
-    await apiFetch(`/jobs/${created.job_id}/start`, { method: "POST" });
+    const created = await client.callTool<{ job_id: string }>("job.create", {
+      model: prompt.model,
+      upstream_channel: prompt.upstreamChannel || "",
+      reasoning_effort: prompt.reasoningEffort || "medium",
+      statement_md: buildStatementWithUserMessage(prompt.problemDescription, userMessage),
+      current_code_cpp: seedMainCpp ?? prompt.code ?? "",
+      time_limit_ms: prompt.timeLimitMs,
+      memory_limit_mb: prompt.memoryLimitMb,
+      tests_zip_b64: testsZipB64,
+      tests_format: zip ? "in_out_pairs" : "auto",
+    });
+
+    await client.callTool("job.start", { job_id: created.job_id });
     return created.job_id;
   };
 
@@ -783,79 +795,61 @@ export function Cockpit({
     }
   };
 
-  // Structured realtime stream from runner/appserver.
+  // MCP stream: job agent_status + terminal (fallback).
   useEffect(() => {
     if (!activeJobId) return;
-    let statusOffset = 0;
-    const controller = new AbortController();
-
-    const loop = async () => {
-      while (!controller.signal.aborted) {
-        const url = `${API_BASE}/jobs/${activeJobId}/agent_status.sse?offset=${statusOffset}`;
-        try {
-          await connectSse(
-            url,
-            (event, data) => {
-              if (event !== "agent_status") return;
-              if (sealedJobsRef.current[activeJobId]) return;
-              try {
-                const obj = JSON.parse(data);
-                const nextOffset = Number(obj.offset);
-                if (Number.isFinite(nextOffset) && nextOffset >= statusOffset) {
-                  statusOffset = nextOffset;
-                }
-                const item = obj.item as AgentStatusLine;
-                if (!hasAgentStatusEventRef.current[activeJobId]) {
-                  hasAgentStatusEventRef.current[activeJobId] = true;
-                  terminalStreamTextRef.current[activeJobId] = "";
-                }
-                pushAgentStatusStream(activeJobId, item);
-              } catch {}
-            },
-            controller.signal
-          );
-        } catch {
-          await new Promise((r) => setTimeout(r, 1000));
-        }
-      }
-    };
-
-    loop();
-    return () => {
-      controller.abort();
-    };
-  }, [activeJobId, pushAgentStatusStream]);
-
-  // Terminal stream fallback (for older runners that do not emit agent_status deltas).
-  useEffect(() => {
-    if (!activeJobId) return;
+    let cancelled = false;
     const decoder = new TextDecoder();
+    let agentOffset = 0;
     let terminalOffset = 0;
-    const controller = new AbortController();
+
+	    const client = getMcpClient();
+	    const unsubscribe = client.onNotification((method, params) => {
+	      if (!params || typeof params !== "object") return;
+	      const payload = params as Record<string, unknown>;
+	      if (String(payload["job_id"] ?? "") !== activeJobId) return;
+	      if (sealedJobsRef.current[activeJobId]) return;
+
+	      if (method === "agent_status") {
+	        try {
+	          const nextOffset = Number(payload["offset"]);
+	          if (Number.isFinite(nextOffset) && nextOffset >= agentOffset) {
+	            agentOffset = nextOffset;
+	          }
+	          const item = payload["item"] as AgentStatusLine;
+	          if (!hasAgentStatusEventRef.current[activeJobId]) {
+	            hasAgentStatusEventRef.current[activeJobId] = true;
+	            terminalStreamTextRef.current[activeJobId] = "";
+	          }
+          pushAgentStatusStream(activeJobId, item);
+        } catch {}
+        return;
+      }
+
+	      if (method === "terminal") {
+	        try {
+	          const nextOffset = Number(payload["offset"]);
+	          if (Number.isFinite(nextOffset) && nextOffset >= terminalOffset) {
+	            terminalOffset = nextOffset;
+	          }
+	          if (hasAgentStatusEventRef.current[activeJobId]) return;
+	          const bytes = b64ToBytes(String(payload["chunk_b64"] ?? ""));
+	          const chunkText = decoder.decode(bytes);
+	          pushTerminalTokenStream(activeJobId, chunkText);
+	        } catch {}
+	      }
+	    });
 
     const loop = async () => {
-      while (!controller.signal.aborted) {
-        const url = `${API_BASE}/jobs/${activeJobId}/terminal.sse?offset=${terminalOffset}`;
+      while (!cancelled) {
         try {
-          await connectSse(
-            url,
-            (event, data) => {
-              if (event !== "terminal") return;
-              if (sealedJobsRef.current[activeJobId]) return;
-              try {
-                const obj = JSON.parse(data);
-                const nextOffset = Number(obj.offset);
-                if (Number.isFinite(nextOffset) && nextOffset >= terminalOffset) {
-                  terminalOffset = nextOffset;
-                }
-                if (hasAgentStatusEventRef.current[activeJobId]) return;
-                const bytes = b64ToBytes(obj.chunk_b64);
-                const chunkText = decoder.decode(bytes);
-                pushTerminalTokenStream(activeJobId, chunkText);
-              } catch {}
-            },
-            controller.signal
-          );
+          await client.callTool("job.subscribe", {
+            job_id: activeJobId,
+            streams: ["agent_status", "terminal"],
+            agent_status_offset: agentOffset,
+            terminal_offset: terminalOffset,
+          });
+          await client.waitForDisconnect();
         } catch {
           await new Promise((r) => setTimeout(r, 1000));
         }
@@ -864,9 +858,11 @@ export function Cockpit({
 
     loop();
     return () => {
-      controller.abort();
+      cancelled = true;
+      unsubscribe();
+      client.callTool("job.unsubscribe", { job_id: activeJobId }).catch(() => null);
     };
-  }, [activeJobId, pushTerminalTokenStream]);
+  }, [activeJobId, pushAgentStatusStream, pushTerminalTokenStream]);
 
   // Poll job state; fetch artifacts on completion.
   useEffect(() => {
@@ -878,7 +874,8 @@ export function Cockpit({
     const loadJob = async () => {
       try {
         if (finalized) return;
-        const st = await apiFetch<JobState>(`/jobs/${activeJobId}`);
+        const client = getMcpClient();
+        const st = (await client.callTool("job.get_state", { job_id: activeJobId })) as JobState;
         if (cancelled) return;
         setJob(st);
 
@@ -896,10 +893,14 @@ export function Cockpit({
         finalizeLiveTokenStream(activeJobId);
 
         if (st.status === "succeeded") {
-          const [cpp, rep] = await Promise.all([
-            apiFetch<string>(`/jobs/${activeJobId}/artifacts/main.cpp`).catch(() => null),
-            apiFetch<ReportArtifact>(`/jobs/${activeJobId}/artifacts/report.json`).catch(() => null),
-          ]);
+          const client = getMcpClient();
+          const artifacts = await client.callTool<{ items?: Record<string, unknown> }>("job.get_artifacts", {
+            job_id: activeJobId,
+            names: ["main.cpp", "report.json"],
+          });
+	          const items = artifacts?.items ?? {};
+          const cpp = (items["main.cpp"] as string | null) ?? null;
+          const rep = (items["report.json"] as ReportArtifact | null) ?? null;
           if (cancelled) return;
           setMainCpp(cpp);
           setReport(rep);
@@ -942,7 +943,8 @@ export function Cockpit({
   const cancelJob = async () => {
     if (!activeJobId) return;
     try {
-      await apiFetch(`/jobs/${activeJobId}/cancel`, { method: "POST" });
+      const client = getMcpClient();
+      await client.callTool("job.cancel", { job_id: activeJobId });
     } catch (e: unknown) {
       const msg = getErrorMessage(e);
       setErrorText(msg);

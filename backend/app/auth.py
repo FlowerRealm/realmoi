@@ -4,10 +4,17 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
 import jwt
+import bcrypt
 from passlib.context import CryptContext
 
 from .settings import SETTINGS
 
+
+if not hasattr(bcrypt, "__about__") and hasattr(bcrypt, "__version__"):
+    class _BcryptAbout:
+        __version__ = bcrypt.__version__
+
+    bcrypt.__about__ = _BcryptAbout()  # type: ignore[attr-defined]
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -35,4 +42,3 @@ def create_access_token(*, user_id: str, username: str, role: Literal["user", "a
 
 def decode_access_token(token: str) -> dict[str, Any]:
     return jwt.decode(token, SETTINGS.jwt_secret, algorithms=["HS256"])
-

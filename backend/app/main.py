@@ -11,7 +11,7 @@ from .auth import hash_password
 from .db import init_db
 from .exceptions import install_exception_handlers
 from .models import User
-from .routers import admin, auth, billing, jobs, models, settings
+from .routers import admin, auth, billing, jobs, mcp, models, settings
 from .services.job_manager import JobManager
 from .settings import SETTINGS
 
@@ -71,6 +71,7 @@ def create_app() -> FastAPI:
     app.include_router(models.router, prefix="/api")
     app.include_router(settings.router, prefix="/api")
     app.include_router(jobs.router, prefix="/api")
+    app.include_router(mcp.router, prefix="/api")
     app.include_router(billing.router, prefix="/api")
 
     return app
@@ -85,4 +86,3 @@ from .services import singletons  # noqa: WPS433,E402
 JOB_MANAGER = JobManager(jobs_root=Path(SETTINGS.jobs_root))
 singletons.JOB_MANAGER = JOB_MANAGER
 JOB_MANAGER.reconcile()
-

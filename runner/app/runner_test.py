@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import atexit
 import base64
 import json
 import os
@@ -12,6 +13,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
+try:
+    from realmoi_mcp_client import McpClientError, McpStdioClient
+except ModuleNotFoundError:  # pragma: no cover
+    from runner.app.realmoi_mcp_client import McpClientError, McpStdioClient  # type: ignore
+
 
 MAX_STREAM_BYTES = 65536
 JOB_DIR = Path(os.environ.get("REALMOI_JOB_DIR") or "/job")
@@ -20,6 +26,84 @@ WORK_DIR = Path(os.environ.get("REALMOI_WORK_DIR") or "/tmp/work")
 
 def job_path(*parts: str) -> Path:
     return JOB_DIR.joinpath(*parts)
+
+
+def ensure_runner_test_import_path() -> None:
+    """Ensure child Python processes can import ``realmoi_status_mcp`` by module name."""
+
+    module_dir = str(Path(__file__).resolve().parent)
+    current = str(os.environ.get("PYTHONPATH") or "")
+    paths = [p for p in current.split(os.pathsep) if p]
+    if module_dir in paths:
+        return
+    os.environ["PYTHONPATH"] = os.pathsep.join([module_dir, *paths]) if paths else module_dir
+
+
+_MCP_CLIENT: McpStdioClient | None = None
+_MCP_DISABLED: bool = False
+_STATUS_LAST_SIG: tuple[str, str] | None = None
+_STATUS_LAST_TS: float = 0.0
+
+
+def _close_mcp_client() -> None:
+    global _MCP_CLIENT
+    if _MCP_CLIENT is None:
+        return
+    try:
+        _MCP_CLIENT.close()
+    except Exception:
+        pass
+    _MCP_CLIENT = None
+
+
+atexit.register(_close_mcp_client)
+
+
+def _get_mcp_client() -> McpStdioClient | None:
+    global _MCP_CLIENT, _MCP_DISABLED
+    if _MCP_DISABLED:
+        return None
+    if _MCP_CLIENT is not None:
+        return _MCP_CLIENT
+    try:
+        _MCP_CLIENT = McpStdioClient(module_name="realmoi_status_mcp", env=os.environ.copy())
+        return _MCP_CLIENT
+    except (McpClientError, OSError, ValueError):
+        _MCP_DISABLED = True
+        return None
+
+
+def status_update(*, stage: str, summary: str, level: str = "info", progress: int | None = None) -> None:
+    global _STATUS_LAST_SIG, _STATUS_LAST_TS
+
+    stage = str(stage or "").strip() or "test"
+    summary = str(summary or "").strip()
+    if len(summary) > 200:
+        summary = summary[:200]
+
+    sig = (stage, summary)
+    now = time.time()
+    if _STATUS_LAST_SIG == sig and now - _STATUS_LAST_TS < 1.0:
+        return
+    _STATUS_LAST_SIG = sig
+    _STATUS_LAST_TS = now
+
+    client = _get_mcp_client()
+    if client is None:
+        return
+
+    args: dict[str, Any] = {
+        "stage": stage,
+        "summary": summary,
+        "level": level,
+        "attempt": int(os.environ.get("ATTEMPT") or 1),
+    }
+    if progress is not None:
+        args["progress"] = progress
+    try:
+        client.call_tool(name="status.update", arguments=args)
+    except Exception:
+        return
 
 
 def b64_trunc(data: bytes, max_bytes: int = MAX_STREAM_BYTES) -> tuple[str, bool]:
@@ -206,6 +290,7 @@ def run_program(
 
 
 def main() -> int:
+    ensure_runner_test_import_path()
     job = read_job()
     try:
         attempt = int(os.environ.get("ATTEMPT") or 1)
@@ -213,6 +298,7 @@ def main() -> int:
         attempt = 1
     if attempt < 1:
         attempt = 1
+    os.environ["ATTEMPT"] = str(attempt)
 
     limits = job.get("limits") or {}
     time_limit_ms = int(limits.get("time_limit_ms") or 2000)
@@ -236,7 +322,10 @@ def main() -> int:
     src_cpp = job_path("output", "main.cpp")
     exe_path = work_dir / "prog"
 
+    status_update(stage="test", summary="开始测试", progress=0)
+
     compile_cmd = ["g++", "-std=c++20", "-O2", "-pipe", str(src_cpp), "-o", str(exe_path)]
+    status_update(stage="test", summary="编译中", progress=5)
     cp = subprocess.run(compile_cmd, capture_output=True)
     c_stdout = cp.stdout
     c_stderr = cp.stderr
@@ -286,12 +375,14 @@ def main() -> int:
     }
 
     if not compile_ok:
+        status_update(stage="repair", summary=f"编译失败：exit={cp.returncode}", level="error", progress=100)
         report["status"] = "failed"
         report["error"] = {"code": "compile_error", "message": "Compile failed"}
         write_json(out_root / "report.json", report)
         return 1
 
     if not tests_present:
+        status_update(stage="done", summary="编译通过（无 tests）", progress=100)
         report["status"] = "succeeded"
         write_json(out_root / "report.json", report)
         return 0
@@ -302,7 +393,18 @@ def main() -> int:
     summary = report["summary"]
     summary["total"] = len(cases)
 
-    for c in cases:
+    total = len(cases)
+    status_update(stage="test", summary=f"开始执行测试（{total} case）", progress=10)
+    update_every = max(1, total // 10) if total else 1
+    last_progress: int | None = None
+
+    for idx, c in enumerate(cases, start=1):
+        if total and (idx == 1 or idx == total or idx % update_every == 0):
+            progress = 10 + int((80 * idx) / total)
+            if progress != last_progress:
+                status_update(stage="test", summary=f"测试进度：{idx}/{total}", progress=progress)
+                last_progress = progress
+
         in_path = tests_dir / c.input_rel
         input_bytes = in_path.read_bytes()
 
@@ -399,6 +501,23 @@ def main() -> int:
     report["status"] = "succeeded" if summary["failed"] == 0 else "failed"
     if report["status"] != "succeeded":
         report["error"] = {"code": "tests_failed", "message": "Tests failed"}
+
+    if report["status"] == "succeeded":
+        status_update(stage="done", summary=f"测试通过：passed={summary['passed']} failed=0", progress=100)
+    else:
+        verdict = str(summary.get("first_failure_verdict") or "")
+        case = str(summary.get("first_failure") or "")
+        msg_ = str(summary.get("first_failure_message") or "")
+        bits = [x for x in (verdict, case, msg_) if x]
+        detail = " ".join(bits)
+        if detail:
+            detail = "：" + detail
+        status_update(
+            stage="repair",
+            summary=f"测试未通过（failed={summary['failed']}）{detail}",
+            level="warn",
+            progress=100,
+        )
 
     write_json(out_root / "report.json", report)
     return 0 if report["status"] == "succeeded" else 1

@@ -47,7 +47,8 @@ class Settings(BaseSettings):
     judge_poll_interval_ms: int = 1000
     judge_lock_stale_seconds: int = 120
     judge_api_base_url: str = ""
-    judge_self_test_timeout_seconds: int = 90
+    judge_mcp_token: str = "dev-judge-token-change-me"
+    judge_work_root: str = ""
 
     # Resource limits (server clamps user input to these)
     max_cpus: float = 2.0

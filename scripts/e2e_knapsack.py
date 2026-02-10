@@ -1,17 +1,25 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import io
 import json
 import os
+import sys
+import threading
 import time
-from urllib.parse import quote
+from urllib.parse import quote, urlencode, urlparse, urlunparse
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import httpx
+
+try:
+    from websockets.sync.client import connect  # type: ignore
+except ModuleNotFoundError:  # pragma: no cover
+    connect = None  # type: ignore[assignment]
 
 
 def _now_ms() -> int:
@@ -20,6 +28,10 @@ def _now_ms() -> int:
 
 def _print(msg: str) -> None:
     print(msg, flush=True)
+
+def _print_stream(text: str) -> None:
+    sys.stdout.write(text)
+    sys.stdout.flush()
 
 
 class ApiFailed(Exception):
@@ -65,6 +77,95 @@ def api_request(
         err = _parse_api_error(resp)
         raise ApiFailed(f"{method} {path}: {err.status_code} {err.code} {err.message}")
     return resp
+
+
+def _build_mcp_ws_url(*, api_base: str, token: str) -> str:
+    base = str(api_base or "").strip().rstrip("/")
+    if not base:
+        raise ApiFailed("mcp: empty api_base")
+
+    parsed = urlparse(base)
+    scheme = parsed.scheme
+    netloc = parsed.netloc
+    path = parsed.path
+
+    if not scheme or not netloc:
+        # Allow bare host:port/api
+        parsed = urlparse("http://" + base)
+        scheme = parsed.scheme
+        netloc = parsed.netloc
+        path = parsed.path
+
+    ws_scheme = "wss" if scheme == "https" else "ws"
+    api_path = path.rstrip("/")
+    if not api_path.endswith("/api"):
+        api_path = api_path + "/api" if api_path else "/api"
+    ws_path = api_path + "/mcp/ws"
+    query = urlencode({"token": token})
+    return urlunparse((ws_scheme, netloc, ws_path, "", query, ""))
+
+
+class McpWsClient:
+    def __init__(self, *, api_base: str, token: str):
+        if connect is None:
+            raise ApiFailed("mcp: websockets not installed (need uvicorn[standard] / websockets)")
+        self._ws_url = _build_mcp_ws_url(api_base=api_base, token=token)
+        self._ws = connect(self._ws_url)
+        self._next_id = 0
+        self.request("initialize", {})
+
+    def close(self) -> None:
+        try:
+            self._ws.close()
+        except Exception:
+            pass
+
+    def _send(self, obj: dict[str, Any]) -> None:
+        self._ws.send(json.dumps(obj, ensure_ascii=False))
+
+    def recv(self, *, timeout: float | None = None) -> dict[str, Any] | None:
+        try:
+            raw = self._ws.recv(timeout=timeout)
+        except TimeoutError:
+            return None
+        except Exception:
+            return None
+        if raw is None:
+            return None
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8", errors="replace")
+        try:
+            obj = json.loads(str(raw))
+        except Exception:
+            return None
+        return obj if isinstance(obj, dict) else None
+
+    def request(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+        self._next_id += 1
+        msg_id = self._next_id
+        self._send({"jsonrpc": "2.0", "id": msg_id, "method": method, "params": params})
+
+        while True:
+            msg = self.recv(timeout=30.0)
+            if msg is None:
+                raise ApiFailed(f"mcp: timeout waiting for {method}")
+            if msg.get("id") != msg_id:
+                continue
+            if "error" in msg and msg.get("error"):
+                err = msg.get("error") or {}
+                if isinstance(err, dict):
+                    raise ApiFailed(f"mcp {method}: {err.get('code')} {err.get('message')}")
+                raise ApiFailed(f"mcp {method}: {err}")
+            result = msg.get("result")
+            if not isinstance(result, dict):
+                raise ApiFailed(f"mcp {method}: invalid result")
+            return result
+
+    def call_tool(self, *, name: str, arguments: dict[str, Any]) -> Any:
+        result = self.request("tools/call", {"name": name, "arguments": arguments})
+        if "structuredContent" in result:
+            return result.get("structuredContent")
+        return result
 
 
 def make_knapsack_tests_zip() -> bytes:
@@ -159,6 +260,46 @@ def tail_terminal_log_local(*, jobs_root: Path, job_id: str, last_offset: int) -
     return len(data)
 
 
+def tail_job_stream_mcp(*, stop: threading.Event, api_base: str, token: str, job_id: str) -> None:
+    try:
+        client = McpWsClient(api_base=api_base, token=token)
+    except Exception as e:  # noqa: BLE001
+        _print(f"[e2e] mcp tail disabled: {e}")
+        return
+
+    try:
+        client.call_tool(
+            name="job.subscribe",
+            arguments={"job_id": job_id, "streams": ["agent_status", "terminal"], "agent_status_offset": 0, "terminal_offset": 0},
+        )
+        while not stop.is_set():
+            msg = client.recv(timeout=0.5)
+            if msg is None:
+                continue
+            method = msg.get("method")
+            params = msg.get("params") if isinstance(msg.get("params"), dict) else {}
+            if str(params.get("job_id") or "") != job_id:
+                continue
+
+            if method == "terminal":
+                chunk_b64 = str(params.get("chunk_b64") or "")
+                try:
+                    chunk = base64.b64decode(chunk_b64.encode("ascii"))
+                    _print_stream(chunk.decode("utf-8", errors="replace"))
+                except Exception:
+                    continue
+                continue
+
+            if method == "agent_status":
+                item = params.get("item") if isinstance(params.get("item"), dict) else {}
+                stage = str(item.get("stage") or "")
+                summary = str(item.get("summary") or "")
+                if stage or summary:
+                    _print(f"[agent] {stage}: {summary}")
+    finally:
+        client.close()
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--api-base", default=os.environ.get("REALMOI_E2E_API_BASE", "http://localhost:8000/api"))
@@ -229,100 +370,101 @@ def main() -> int:
         raise ApiFailed("signup returned empty token")
     _print(f"[e2e] user signup ok: {username}")
 
-    # 4) create job with tests.zip
+    # 4) create job with tests.zip (via MCP)
     tests_zip = make_knapsack_tests_zip()
     statement_md = knapsack_statement_md()
 
-    data = {
-        "model": model,
-        "statement_md": statement_md,
-        "current_code_cpp": seed_wrong_cpp(),
-        "tests_format": "auto",
-        "compare_mode": "tokens",
-        "run_if_no_expected": "true",
-        "search_mode": args.search_mode,
-        "time_limit_ms": "2000",
-        "memory_limit_mb": "1024",
-    }
-    files = {"tests_zip": ("tests.zip", tests_zip, "application/zip")}
-    created = api_request(
-        client,
-        api_base=api_base,
-        method="POST",
-        path="/jobs",
-        token=user_token,
-        data=data,
-        files=files,
-    ).json()
-    job_id = str(created.get("job_id") or "")
-    if not job_id:
-        raise ApiFailed("create job returned empty job_id")
-    _print(f"[e2e] job created: {job_id}")
-
-    # 5) start
-    api_request(
-        client,
-        api_base=api_base,
-        method="POST",
-        path=f"/jobs/{job_id}/start",
-        token=user_token,
-    )
-    _print("[e2e] job started, waiting...")
-
-    # 6) poll
-    deadline = time.time() + float(args.timeout_seconds)
-    jobs_root = Path(str(args.jobs_root))
-    last_term_off = 0
-    last_state: dict[str, Any] | None = None
-
-    while True:
-        st = api_request(client, api_base=api_base, method="GET", path=f"/jobs/{job_id}", token=user_token).json()
-        last_state = st
-        status = str(st.get("status") or "")
-        if args.tail_terminal:
-            last_term_off = tail_terminal_log_local(jobs_root=jobs_root, job_id=job_id, last_offset=last_term_off)
-
-        if status in ("succeeded", "failed", "cancelled"):
-            _print(f"[e2e] finished: {status}")
-            break
-        if time.time() > deadline:
-            _print("[e2e] timeout, cancelling job...")
-            try:
-                api_request(client, api_base=api_base, method="POST", path=f"/jobs/{job_id}/cancel", token=user_token)
-            except Exception:
-                pass
-            return 1
-        time.sleep(float(args.poll_seconds))
-
+    mcp = McpWsClient(api_base=api_base, token=user_token)
     try:
-        report = api_request(
-            client,
-            api_base=api_base,
-            method="GET",
-            path=f"/jobs/{job_id}/artifacts/report.json",
-            token=user_token,
-        ).json()
-    except ApiFailed as e:
-        _print(f"[e2e] report fetch failed: {e}")
-        if last_state is not None:
-            _print("[e2e] last job state:")
-            _print(json.dumps(last_state, ensure_ascii=False, indent=2))
-        _print("[e2e] terminal.log tail:")
-        tail_terminal_log_local(jobs_root=jobs_root, job_id=job_id, last_offset=max(0, last_term_off - 20_000))
-        return 1
+        created = mcp.call_tool(
+            name="job.create",
+            arguments={
+                "model": model,
+                "statement_md": statement_md,
+                "current_code_cpp": seed_wrong_cpp(),
+                "tests_zip_b64": base64.b64encode(tests_zip).decode("ascii"),
+                "tests_format": "auto",
+                "compare_mode": "tokens",
+                "run_if_no_expected": True,
+                "search_mode": args.search_mode,
+                "reasoning_effort": "medium",
+                "time_limit_ms": 2000,
+                "memory_limit_mb": 1024,
+            },
+        )
+        job_id = str((created or {}).get("job_id") or "")
+        if not job_id:
+            raise ApiFailed("mcp job.create returned empty job_id")
+        _print(f"[e2e] job created: {job_id}")
 
-    rep_status = str(report.get("status") or "")
-    compile_ok = bool((report.get("compile") or {}).get("ok"))
-    failed = int(((report.get("summary") or {}).get("failed") or 0))
-    _print(f"[e2e] report.status={rep_status} compile_ok={compile_ok} failed={failed}")
+        # 5) start (via MCP)
+        mcp.call_tool(name="job.start", arguments={"job_id": job_id})
+        _print("[e2e] job started, waiting...")
 
-    ok = rep_status == "succeeded" and compile_ok and failed == 0
-    if not ok:
-        _print(json.dumps(report, ensure_ascii=False, indent=2))
-        return 1
+        stop_tail = threading.Event()
+        tail_thread: threading.Thread | None = None
+        if args.tail_terminal:
+            tail_thread = threading.Thread(
+                target=tail_job_stream_mcp,
+                kwargs={"stop": stop_tail, "api_base": api_base, "token": user_token, "job_id": job_id},
+                daemon=True,
+            )
+            tail_thread.start()
 
-    _print("[e2e] ✅ knapsack passed")
-    return 0
+        # 6) poll (via MCP)
+        deadline = time.time() + float(args.timeout_seconds)
+        jobs_root = Path(str(args.jobs_root))
+        last_term_off = 0
+        last_state: dict[str, Any] | None = None
+
+        while True:
+            st = mcp.call_tool(name="job.get_state", arguments={"job_id": job_id})
+            if not isinstance(st, dict):
+                raise ApiFailed("mcp job.get_state returned invalid payload")
+            last_state = st
+            status = str(st.get("status") or "")
+
+            if args.tail_terminal and tail_thread is None:
+                # Fallback: local tail when MCP tail thread isn't running.
+                last_term_off = tail_terminal_log_local(jobs_root=jobs_root, job_id=job_id, last_offset=last_term_off)
+
+            if status in ("succeeded", "failed", "cancelled"):
+                _print(f"[e2e] finished: {status}")
+                break
+            if time.time() > deadline:
+                _print("[e2e] timeout, cancelling job...")
+                try:
+                    mcp.call_tool(name="job.cancel", arguments={"job_id": job_id})
+                except Exception:
+                    pass
+                return 1
+            time.sleep(float(args.poll_seconds))
+
+        stop_tail.set()
+        if tail_thread is not None:
+            tail_thread.join(timeout=2.0)
+
+        # Fetch report.json (via MCP)
+        artifacts = mcp.call_tool(name="job.get_artifacts", arguments={"job_id": job_id, "names": ["report.json"]})
+        items = (artifacts or {}).get("items") if isinstance(artifacts, dict) else None
+        report = items.get("report.json") if isinstance(items, dict) else None
+        if not isinstance(report, dict):
+            raise ApiFailed("mcp report.json missing")
+
+        rep_status = str(report.get("status") or "")
+        compile_ok = bool((report.get("compile") or {}).get("ok"))
+        failed = int(((report.get("summary") or {}).get("failed") or 0))
+        _print(f"[e2e] report.status={rep_status} compile_ok={compile_ok} failed={failed}")
+
+        ok = rep_status == "succeeded" and compile_ok and failed == 0
+        if not ok:
+            _print(json.dumps(report, ensure_ascii=False, indent=2))
+            return 1
+
+        _print("[e2e] ✅ knapsack passed")
+        return 0
+    finally:
+        mcp.close()
 
 
 if __name__ == "__main__":

@@ -34,7 +34,7 @@ make dev
 - Job 执行默认走本机 runner（`REALMOI_RUNNER_EXECUTOR=local`）。
 - 若你希望回到后端内线程执行，可显式设置 `REALMOI_JUDGE_MODE=embedded` 再执行 `make dev`。
 - 如需切换到 Docker runner，设置 `REALMOI_RUNNER_EXECUTOR=docker`，并确保 `REALMOI_RUNNER_IMAGE` 可用。
-- 默认 `REALMOI_RUNNER_CODEX_TRANSPORT=appserver`，前端优先使用 `agent_status.sse` 展示真正的实时思考/执行增量；若 appserver 失败会自动回退 `exec`。
+- 默认 `REALMOI_RUNNER_CODEX_TRANSPORT=appserver`，前端通过 MCP `job.subscribe` 优先消费 `agent_status` 通知展示真正的实时思考/执行增量；若未收到该通知则回退消费 `terminal` 通知。
 - `codex app-server` 的 `summaryTextDelta` 是流式增量（不保证天然按句子边界推送）；当前实现会结合 `summaryPartAdded + summaryIndex + 标点` 在前端做断句缓冲，保证思考行可读且持续实时。
 
 启动后可在管理后台 `http://localhost:3000/admin/upstream-models` 直接新增/编辑上游渠道配置（持久化到数据库），并按渠道聚合查看上游模型列表。
@@ -95,13 +95,20 @@ make judge
 
 说明：
 - `POST /api/jobs/{job_id}/start` 在该模式下会把 Job 置为 `queued`。
-- 独立测评机进程会轮询并抢占 `queued` Job 执行。
-- Codex 生成阶段不再负责自测；编译与测试统一由独立测评机执行。
-- 现已提供外部自测接口，便于 Codex 按需调用：
-  - `POST /api/jobs/{job_id}/self-test`
-  - Header: `X-Job-Token`（来自 `jobs/{job_id}/input/job.json` 的 `judge.self_test_token`）
-  - JSON Body: `{"main_cpp":"<完整 C++20 源码>"}`
-  - 建议：Codex 先调用该接口，若 `status != succeeded` 则根据 `summary.first_failure_*` 循环修复后再输出最终答案
+- 独立测评机进程会通过 MCP 轮询并抢占 `queued` Job 执行：
+  - WebSocket：`GET /api/mcp/ws`（使用 `REALMOI_JUDGE_MCP_TOKEN` 鉴权）
+  - tools（抢占锁）：`judge.claim_next` / `judge.release_claim`
+  - tools（输入/状态/日志/产物）：`judge.input.list` / `judge.input.read_chunk` / `judge.job.get_state` / `judge.job.patch_state` / `judge.job.append_terminal` / `judge.job.append_agent_status` / `judge.job.put_artifacts`
+  - tools（generate 配置/计费）：`judge.prepare_generate` / `judge.usage.ingest`
+  - 环境变量：`REALMOI_JUDGE_MCP_TOKEN`（backend 与 judge 必须一致；默认 `dev-judge-token-change-me`，生产请覆盖）
+  - 可选：`REALMOI_JUDGE_WORK_ROOT`（judge 的本地 job 临时工作目录；默认：
+    - local runner：`/tmp/realmoi-judge-work`
+    - docker runner：`{REALMOI_JOBS_ROOT}/.judge-work`）
+- 正式编译与测试由独立测评机执行（generate/test 两阶段仍由 worker 串联）。
+- 当你上传了 `tests.zip` 时，runner 会通过 **MCP 工具**让 Codex 在生成阶段先自测再输出最终答案：
+  - MCP tool：`judge.self_test`
+  - 入参：`{"main_cpp":"<完整 C++20 源码>","timeout_seconds":90}`（timeout 可选）
+  - 返回字段重点：`ok` / `status` / `first_failure_*`；若 `ok=false` 则循环修复并再次调用
 - 前端会显示 `已排队，等待测评机` 状态。
 
 ## 3. 生产运行要点（MVP）

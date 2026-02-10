@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import atexit
 import json
 import os
 import re
@@ -9,12 +10,15 @@ import time
 from pathlib import Path
 from typing import Any, Literal, cast
 
+try:
+    from realmoi_mcp_client import McpClientError, McpStdioClient
+except ModuleNotFoundError:  # pragma: no cover
+    from runner.app.realmoi_mcp_client import McpClientError, McpStdioClient  # type: ignore
+
 ReasoningEffort = Literal["low", "medium", "high", "xhigh"]
 REASONING_EFFORT_VALUES: set[str] = {"low", "medium", "high", "xhigh"}
 JOB_DIR = Path(os.environ.get("REALMOI_JOB_DIR") or "/job")
 SCHEMA_PATH = Path(os.environ.get("REALMOI_SCHEMA_PATH") or "/app/schemas/codex_output_schema.json")
-JUDGE_SELF_TEST_URL = os.environ.get("REALMOI_JUDGE_SELF_TEST_URL") or ""
-JUDGE_SELF_TEST_TOKEN = os.environ.get("REALMOI_JUDGE_SELF_TEST_TOKEN") or ""
 
 
 def job_path(*parts: str) -> Path:
@@ -144,61 +148,45 @@ def ensure_runner_generate_import_path() -> None:
     os.environ["PYTHONPATH"] = os.pathsep.join([module_dir, *paths]) if paths else module_dir
 
 
-_STATUS_SEQ: int | None = None
 _STATUS_LAST_SIG: tuple[str, str] | None = None
 _STATUS_LAST_TS: float = 0.0
 _CJK_RE = re.compile(r"[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]")
 
+_MCP_CLIENT: McpStdioClient | None = None
+_MCP_DISABLED: bool = False
 
-def _read_last_seq(path: Path) -> int:
-    if not path.exists():
-        return 0
+
+def _close_mcp_client() -> None:
+    global _MCP_CLIENT
+    if _MCP_CLIENT is None:
+        return
     try:
-        lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
-        for line in reversed(lines):
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                obj = json.loads(line)
-            except Exception:
-                continue
-            v = obj.get("seq")
-            if isinstance(v, int):
-                return v
-            try:
-                return int(v)
-            except Exception:
-                continue
+        _MCP_CLIENT.close()
     except Exception:
-        return 0
-    return 0
+        pass
+    _MCP_CLIENT = None
 
 
-def _append_status_line(*, payload: dict[str, Any]) -> bool:
+atexit.register(_close_mcp_client)
+
+
+def _get_mcp_client() -> McpStdioClient | None:
+    global _MCP_CLIENT, _MCP_DISABLED
+    if _MCP_DISABLED:
+        return None
+    if _MCP_CLIENT is not None:
+        return _MCP_CLIENT
     try:
-        log_path = job_path("logs", "agent_status.jsonl")
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        with log_path.open("ab") as f:
-            f.write((json.dumps(payload, ensure_ascii=False) + "\n").encode("utf-8"))
-    except Exception:
-        return False
-    return True
-
-
-def _next_status_seq() -> int:
-    global _STATUS_SEQ
-    log_path = job_path("logs", "agent_status.jsonl")
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    if _STATUS_SEQ is None:
-        _STATUS_SEQ = _read_last_seq(log_path)
-    _STATUS_SEQ += 1
-    return _STATUS_SEQ
+        _MCP_CLIENT = McpStdioClient(module_name="realmoi_status_mcp", env=os.environ.copy())
+        return _MCP_CLIENT
+    except (McpClientError, OSError, ValueError):
+        _MCP_DISABLED = True
+        return None
 
 
 def status_update(*, stage: str, summary: str, level: str = "info", progress: int | None = None) -> None:
     """
-    Append a status line for UI consumption (SSE via backend).
+    Append a status line for UI consumption (via MCP job.subscribe).
 
     Args:
         stage: One of analysis/plan/search/coding/repair/done/error.
@@ -207,7 +195,7 @@ def status_update(*, stage: str, summary: str, level: str = "info", progress: in
         progress: Optional 0-100 progress.
     """
 
-    global _STATUS_SEQ, _STATUS_LAST_SIG, _STATUS_LAST_TS
+    global _STATUS_LAST_SIG, _STATUS_LAST_TS
 
     stage = str(stage or "").strip() or "analysis"
     summary = str(summary or "").strip()
@@ -221,29 +209,20 @@ def status_update(*, stage: str, summary: str, level: str = "info", progress: in
     _STATUS_LAST_SIG = sig
     _STATUS_LAST_TS = now
 
-    job_id = ""
-    attempt = int(os.environ.get("ATTEMPT") or 1)
-    try:
-        job = json.loads(job_path("input", "job.json").read_text(encoding="utf-8"))
-        job_id = str(job.get("job_id") or "")
-    except Exception:
-        job_id = ""
-
-    line = {
-        "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
-        "seq": _next_status_seq(),
-        "job_id": job_id,
-        "attempt": attempt,
-        "stage": stage,
-        "level": level,
-        "progress": progress,
-        "summary": summary,
-        "meta": {},
-    }
-    if not _append_status_line(payload=line):
+    client = _get_mcp_client()
+    if client is None:
         return
+
+    args: dict[str, Any] = {
+        "stage": stage,
+        "summary": summary,
+        "level": level,
+        "attempt": int(os.environ.get("ATTEMPT") or 1),
+    }
+    if progress is not None:
+        args["progress"] = progress
     try:
-        print(f"[status] stage={stage} summary={summary}", flush=True)
+        client.call_tool(name="status.update", arguments=args)
     except Exception:
         return
 
@@ -258,26 +237,21 @@ def agent_delta_update(
 ) -> None:
     if not delta and kind != "reasoning_summary_boundary":
         return
-    now = time.time()
-    line = {
-        "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
-        "seq": _next_status_seq(),
-        "job_id": "",
-        "attempt": int(os.environ.get("ATTEMPT") or 1),
+    client = _get_mcp_client()
+    if client is None:
+        return
+    args: dict[str, Any] = {
         "stage": stage,
         "level": level,
-        "progress": None,
-        "summary": delta[:200],
-        "kind": kind,
-        "delta": delta,
+        "kind": str(kind or "").strip() or "other",
+        "delta": str(delta or ""),
+        "attempt": int(os.environ.get("ATTEMPT") or 1),
         "meta": meta or {},
     }
     try:
-        job = json.loads(job_path("input", "job.json").read_text(encoding="utf-8"))
-        line["job_id"] = str(job.get("job_id") or "")
+        client.call_tool(name="agent.delta", arguments=args)
     except Exception:
-        line["job_id"] = ""
-    _append_status_line(payload=line)
+        return
 
 
 def has_cjk_text(text: str) -> bool:
@@ -296,75 +270,17 @@ def summarize_reasoning_text(text: str) -> str:
 
 
 def build_external_self_test_hint(job: dict[str, Any]) -> str:
-    """Build strict external self-test protocol hint for Codex prompt."""
+    """Build strict MCP self-test protocol hint for Codex prompt."""
 
     tests_present = bool((job.get("tests") or {}).get("present"))
     if not tests_present:
-        return "- 当前未提供 tests，本轮无需调用外部自测接口。"
-
-    if not JUDGE_SELF_TEST_URL or not JUDGE_SELF_TEST_TOKEN:
-        return "- 当前提供了 tests，但未注入外部自测接口凭证；请直接输出并等待独立测评机。"
-
-    python_template = (
-        "  - 可直接使用以下 Python 模板调用（无第三方依赖）：\n"
-        "```python\n"
-        "import time\n"
-        "import json\n"
-        "import urllib.error\n"
-        "import urllib.request\n"
-        "\n"
-        f'url = "{JUDGE_SELF_TEST_URL}"\n'
-        f'token = "{JUDGE_SELF_TEST_TOKEN}"\n'
-        "\n"
-        "def call_self_test(main_cpp: str, *, timeout: int = 30, max_retries: int = 3, sleep_seconds: float = 0.5):\n"
-        "    last_error = None\n"
-        "    for attempt in range(1, max_retries + 1):\n"
-        "        payload = {\"main_cpp\": main_cpp}\n"
-        "        req = urllib.request.Request(\n"
-        "            url,\n"
-        "            data=json.dumps(payload, ensure_ascii=False).encode(\"utf-8\"),\n"
-        "            headers={\n"
-        "                \"Content-Type\": \"application/json\",\n"
-        "                \"X-Job-Token\": token,\n"
-        "            },\n"
-        "            method=\"POST\",\n"
-        "        )\n"
-        "        try:\n"
-        "            with urllib.request.urlopen(req, timeout=timeout) as resp:\n"
-        "                result = json.loads(resp.read().decode(\"utf-8\"))\n"
-        "            summary = result.get(\"summary\") or {}\n"
-        "            return {\n"
-        "                \"ok\": str(result.get(\"status\") or \"\") == \"succeeded\",\n"
-        "                \"status\": result.get(\"status\"),\n"
-        "                \"first_failure\": summary.get(\"first_failure\"),\n"
-        "                \"first_failure_verdict\": summary.get(\"first_failure_verdict\"),\n"
-        "                \"first_failure_message\": summary.get(\"first_failure_message\"),\n"
-        "                \"raw\": result,\n"
-        "            }\n"
-        "        except (urllib.error.URLError, TimeoutError, ValueError) as e:\n"
-        "            last_error = e\n"
-        "            if attempt < max_retries:\n"
-        "                time.sleep(sleep_seconds)\n"
-        "                continue\n"
-        "            raise RuntimeError(f\"self_test_request_failed: {e}\")\n"
-        "\n"
-        "    raise RuntimeError(f\"self_test_request_failed: {last_error}\")\n"
-        "\n"
-        "main_cpp = \"\"\"<完整 C++20 源码>\"\"\"\n"
-        "check = call_self_test(main_cpp)\n"
-        "print(check[\"status\"])\n"
-        "print(check[\"first_failure_message\"])\n"
-        "```\n"
-    )
+        return "- 当前未提供 tests，本轮无需自测。"
 
     return (
-        "- 当前提供了 tests：在给出最终 JSON 之前，你必须先调用外部自测接口并根据结果修复。\n"
-        f"  - URL: `{JUDGE_SELF_TEST_URL}`\n"
-        f"  - Header: `X-Job-Token: {JUDGE_SELF_TEST_TOKEN}`\n"
-        '  - Body: `{"main_cpp":"<完整 C++20 源码>"}`\n'
-        "  - 返回字段重点：`status`、`summary.first_failure`、`summary.first_failure_verdict`、`summary.first_failure_message`\n"
-        "  - 若 `status != succeeded`，必须根据失败信息继续修复并再次调用接口，直到 succeeded。\n"
-        f"{python_template}"
+        "- 当前提供了 tests：在给出最终 JSON 之前，你必须先调用 MCP 工具 `judge.self_test` 并根据结果循环修复，直到通过。\n"
+        '  - 入参：`{"main_cpp":"<完整 C++20 源码>","timeout_seconds":90}`（timeout 可选）\n'
+        "  - 返回字段重点：`ok`、`status`、`first_failure`、`first_failure_verdict`、`first_failure_message`\n"
+        "  - 若 `ok=false`，必须修复后再次调用工具，直至 `ok=true`。\n"
     )
 
 
@@ -725,6 +641,10 @@ def _run_codex_appserver(
         if kind == "reasoning_summary_delta":
             if not reasoning_buf:
                 return
+            if not force and len(reasoning_buf) < 80 and not any(
+                x in reasoning_buf for x in ("\n", "。", "！", "？", ".", "!", "?")
+            ):
+                return
             agent_delta_update(kind=kind, delta=reasoning_buf, stage=stage, meta=(reasoning_meta or None))
             reasoning_buf = ""
             reasoning_meta = {}
@@ -919,9 +839,17 @@ def _run_codex_appserver(
                 if method in ("item/reasoning/summaryTextDelta", "item/reasoning/summary_text_delta"):
                     delta = str(params.get("delta") or "")
                     summary_index = _to_int_or_none(params.get("summaryIndex"))
-                    reasoning_meta = {"source": "summary_text_delta"}
+                    new_meta: dict[str, Any] = {"source": "summary_text_delta"}
                     if summary_index is not None:
-                        reasoning_meta["summary_index"] = summary_index
+                        new_meta["summary_index"] = summary_index
+                        current_index = reasoning_meta.get("summary_index")
+                        if (
+                            reasoning_buf
+                            and isinstance(current_index, int)
+                            and current_index != summary_index
+                        ):
+                            _flush_agent_delta(kind="reasoning_summary_delta", stage="analysis", force=True)
+                    reasoning_meta = new_meta
                     reasoning_buf += delta
                     _flush_agent_delta(kind="reasoning_summary_delta", stage="analysis")
                     continue

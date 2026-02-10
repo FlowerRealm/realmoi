@@ -2,7 +2,6 @@ import json
 import os
 from pathlib import Path
 
-import runner.app.runner_generate as runner_generate_module
 from runner.app.runner_generate import (
     _extract_delta_from_params,
     _extract_item_from_params,
@@ -147,10 +146,7 @@ def test_repair_prompt_does_not_ask_codex_to_run_tests() -> None:
     assert "python3 -X utf8" not in prompt
 
 
-def test_generate_prompt_requires_external_self_test_when_tests_present(monkeypatch) -> None:
-    monkeypatch.setattr(runner_generate_module, "JUDGE_SELF_TEST_URL", "http://127.0.0.1:8000/api/jobs/j1/self-test")
-    monkeypatch.setattr(runner_generate_module, "JUDGE_SELF_TEST_TOKEN", "token-demo")
-
+def test_generate_prompt_requires_mcp_self_test_when_tests_present() -> None:
     prompt = build_prompt_generate(
         {
             "problem": {"statement_md": "# A"},
@@ -158,20 +154,14 @@ def test_generate_prompt_requires_external_self_test_when_tests_present(monkeypa
             "tests": {"present": True},
         }
     )
-    assert "必须先调用外部自测接口" in prompt
-    assert "http://127.0.0.1:8000/api/jobs/j1/self-test" in prompt
-    assert "summary.first_failure" in prompt
-    assert "urllib.request.Request" in prompt
-    assert "\"X-Job-Token\": token" in prompt
-    assert "for attempt in range(1, max_retries + 1)" in prompt
-    assert "time.sleep(sleep_seconds)" in prompt
+    assert "必须先调用 MCP 工具 `judge.self_test`" in prompt
+    assert "judge.self_test" in prompt
+    assert "\"main_cpp\"" in prompt
+    assert "first_failure" in prompt
     assert "first_failure_message" in prompt
 
 
-def test_generate_prompt_skips_external_self_test_when_no_tests(monkeypatch) -> None:
-    monkeypatch.setattr(runner_generate_module, "JUDGE_SELF_TEST_URL", "http://127.0.0.1:8000/api/jobs/j1/self-test")
-    monkeypatch.setattr(runner_generate_module, "JUDGE_SELF_TEST_TOKEN", "token-demo")
-
+def test_generate_prompt_skips_self_test_when_no_tests() -> None:
     prompt = build_prompt_generate(
         {
             "problem": {"statement_md": "# A"},
@@ -179,4 +169,4 @@ def test_generate_prompt_skips_external_self_test_when_no_tests(monkeypatch) -> 
             "tests": {"present": False},
         }
     )
-    assert "当前未提供 tests，本轮无需调用外部自测接口" in prompt
+    assert "当前未提供 tests，本轮无需自测" in prompt

@@ -76,6 +76,7 @@ def _init_test_env() -> None:
     os.environ.setdefault("REALMOI_ADMIN_PASSWORD", "admin-password-123")
     os.environ.setdefault("REALMOI_OPENAI_API_KEY", "sk-test")
     os.environ.setdefault("REALMOI_OPENAI_BASE_URL", "https://example.com")
+    os.environ.setdefault("REALMOI_JUDGE_MCP_TOKEN", "test-judge-token")
 
 
 _init_test_env()
