@@ -38,6 +38,7 @@
 - `report.json`：编译/测试结构化报告（compile_only / compile_and_test）
   - test 阶段首先写入：`output/artifacts/attempt_{n}/test_output/report.json`
   - 后端会复制为：`output/report.json`（便于前端稳定读取）
+  - `tests[]` 每条用例会记录 `verdict/time_ms/memory_kb/stdout_b64/stderr_b64/diff`（用于前端“样例 / 结果”面板展示；`memory_kb` 来自 `wait4().ru_maxrss`，单位 kB）
 - `usage.json`：从 Codex JSONL 事件解析 usage（含 cached_input/cached_output）
 
 ## Search 模式

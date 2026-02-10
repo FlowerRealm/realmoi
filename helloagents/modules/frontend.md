@@ -74,6 +74,8 @@
     - `method=terminal`（回退流）
 - 产物展示：
   - MCP `job.get_artifacts`（按需取 `solution.json/main.cpp/report.json`）
+- 样例展示：
+  - MCP `job.get_tests` / `job.get_test_preview`（展示用户上传的样例输入/输出；结果来自 `report.json`）
 - 结构化样例输入：`testCases[{input, output}]` 会在浏览器端打包为 `tests.zip`（in/out pairs），并通过 MCP `tests_zip_b64` 传输
 - “继续对话”（MVP 语义）：发送消息会创建新的 Job，并把消息追加到题面末尾作为“用户追加指令”，seed 使用上一轮的 `main.cpp`
 - URL 行为：创建/切换 Job 时会同步更新浏览器地址为 `/jobs/{jobId}`；返回大厅会恢复到 `/`
@@ -106,7 +108,8 @@
   - 过程日志新增解析 `[status] stage=... summary=...` 行，并映射为中文阶段标签（分析/方案/编码/修复等）
   - `PROCESS (N)` 标题切换为 `思考过程（N）`
 - 历史兼容（2026-02-08）：旧会话中残留的 `job-stream-*` 消息会被前端过滤，不再显示“实时进展（已结束）”卡片
-- Cockpit 标签精简（2026-02-08）：先移除 `TERMINAL` 页签，后续继续移除 `STATUS` 页签；当前稳定为 `CHAT/CODE` 双栏，终端增量日志仅作为 `CHAT` Token 流来源
+- Cockpit 标签精简（2026-02-08）：先移除 `TERMINAL` 页签，后续继续移除 `STATUS` 页签；终端增量日志仅作为 `CHAT` Token 流来源
+- 样例面板（2026-02-10）：新增“样例 / 结果”栏（CPH 风格），与代码并列展示 input/expected/actual（stdout）、verdict/diff，并按 verdict 整卡变色；移除字节大小与 `exit=...` 字段，新增时间/内存展示（内存统一按 MB 单位展示；顶部展示总耗时/峰值内存，不再展示 TL/ML 限制）
 - 顶栏避让（2026-02-08）：`AssistantApp` 主容器顶部留白提升为 `pt-16 md:pt-20`，消除页面主体与固定顶栏重叠
 - Cockpit 双栏（2026-02-08）：移除左侧信息栏与 `STATUS` 页签，工作区改为 `CHAT`（左）+ `CODE`（右）并列布局，状态信息仅保留在顶部摘要与最终结果消息
 - 失败态行为：Job 进入终态后会尽量拉取 `main.cpp/solution.json/report.json`，即使失败也方便用户查看失败详情与中间产物

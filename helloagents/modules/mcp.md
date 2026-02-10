@@ -34,6 +34,8 @@
 - `models.list`
 - `job.create` / `job.start` / `job.cancel`
 - `job.get_state` / `job.get_artifacts`
+- `job.get_tests` / `job.get_test_preview`
+  - 用于前端展示“样例 / 结果”面板：列出 tests.zip 解包后的 case，并按需读取 input/expected 预览
 - `job.subscribe` / `job.unsubscribe`
 - notifications：
   - `agent_status`
@@ -66,6 +68,7 @@
 2. frontend → `job.create`（携带 `statement_md`、`tests_zip_b64` 等输入）
 3. frontend → `job.start`
 4. frontend → `job.subscribe(streams=["agent_status","terminal"])` 接收实时通知
+5. frontend → `job.get_tests` / `job.get_test_preview`（展示用户上传的样例输入/输出；结果来自 `report.json`）
 
 ### 独立测评机执行（judge worker）
 

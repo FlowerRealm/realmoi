@@ -62,6 +62,19 @@ export type JobState = {
   error?: unknown;
 };
 
+export type JobTestMeta = {
+  name: string;
+  group: string;
+  input_rel: string;
+  expected_rel: string | null;
+  expected_present: boolean;
+};
+
+export type JobTestPreview = {
+  input: { text: string; truncated: boolean; bytes: number };
+  expected: { text: string; truncated: boolean; bytes: number; missing?: boolean } | null;
+};
+
 export type SolutionArtifact = {
   schema_version: string;
   job_id: string;
@@ -75,4 +88,65 @@ export type SolutionArtifact = {
   seed_code_full_diff?: string;
   assumptions?: string[];
   complexity?: string;
+};
+
+export type ReportArtifact = {
+  schema_version?: string;
+  job_id?: string;
+  owner_user_id?: string;
+  status?: string;
+  mode?: string;
+  environment?: {
+    time_limit_ms?: number;
+    memory_limit_mb?: number;
+    cpus?: number;
+    pids_limit?: number;
+    max_output_bytes_per_test?: number;
+    compare_mode?: string;
+    cpp_std?: string;
+  };
+  compile?: {
+    ok?: boolean;
+    exit_code?: number;
+    stdout_b64?: string;
+    stderr_b64?: string;
+    stdout_truncated?: boolean;
+    stderr_truncated?: boolean;
+  };
+	  tests?: Array<{
+	    name?: string;
+	    group?: string;
+	    input_rel?: string;
+	    expected_rel?: string | null;
+	    expected_present?: boolean;
+	    verdict?: string;
+	    exit_code?: number;
+	    timeout?: boolean;
+	    output_limit_exceeded?: boolean;
+	    time_ms?: number;
+	    memory_kb?: number | null;
+	    stdout_b64?: string;
+	    stderr_b64?: string;
+	    stdout_truncated?: boolean;
+	    stderr_truncated?: boolean;
+	    diff?: {
+      ok?: boolean;
+      mode?: string;
+      message?: string;
+      expected_preview_b64?: string;
+      actual_preview_b64?: string;
+    };
+  }>;
+  summary?: {
+    total?: number;
+    judged?: number;
+    run_only?: number;
+    passed?: number;
+    failed?: number;
+    skipped?: number;
+    first_failure?: string | null;
+    first_failure_verdict?: string | null;
+    first_failure_message?: string | null;
+  };
+  error?: unknown;
 };

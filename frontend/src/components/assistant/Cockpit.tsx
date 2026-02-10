@@ -4,16 +4,9 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { getErrorMessage } from "@/lib/api";
 import { getMcpClient } from "@/lib/mcp";
 import { GlassPanel } from "./GlassPanel";
-import type { JobRun, JobState, Message, PromptData, SolutionArtifact } from "./types";
+import { JobTestsPanel } from "./JobTestsPanel";
+import type { JobRun, JobState, JobTestMeta, Message, PromptData, ReportArtifact, SolutionArtifact } from "./types";
 import { buildTestsZip } from "./testsZip";
-
-type ReportArtifact = {
-  summary?: {
-    first_failure?: string;
-    first_failure_verdict?: string;
-    first_failure_message?: string;
-  };
-};
 
 type JobStatusMeta = {
   lifecycle: "running" | "finished" | "waiting" | "unknown";
@@ -675,6 +668,8 @@ export function Cockpit({
   const [job, setJob] = useState<JobState | null>(null);
   const [mainCpp, setMainCpp] = useState<string | null>(null);
   const [report, setReport] = useState<ReportArtifact | null>(null);
+  const [jobTests, setJobTests] = useState<JobTestMeta[] | null>(null);
+  const [jobTestsError, setJobTestsError] = useState<string | null>(null);
   const [solution, setSolution] = useState<SolutionArtifact | null>(null);
   const [codeView, setCodeView] = useState<"final" | "diff">("final");
 
@@ -942,12 +937,38 @@ export function Cockpit({
     setSolution(null);
     setJob(null);
     setCodeView("final");
+    setJobTests(null);
+    setJobTestsError(null);
     sealedJobsRef.current[activeJobId] = false;
     terminalStreamTextRef.current[activeJobId] = "";
     agentLiveStateRef.current[activeJobId] = { reasoning: "", execution: "", result: "" };
     reasoningBufferRef.current[activeJobId] = { buffer: "", summaryIndex: null };
     hasAgentStatusEventRef.current[activeJobId] = false;
     lastAgentStatusSeqRef.current[activeJobId] = 0;
+  }, [activeJobId]);
+
+  useEffect(() => {
+    if (!activeJobId) return;
+    let cancelled = false;
+
+    const loadTests = async () => {
+      try {
+        const client = getMcpClient();
+        const resp = await client.callTool<{ items?: JobTestMeta[] }>("job.get_tests", { job_id: activeJobId });
+        if (cancelled) return;
+        setJobTests(Array.isArray(resp?.items) ? (resp.items as JobTestMeta[]) : []);
+        setJobTestsError(null);
+      } catch (e: unknown) {
+        if (cancelled) return;
+        setJobTests([]);
+        setJobTestsError(getErrorMessage(e));
+      }
+    };
+
+    loadTests();
+    return () => {
+      cancelled = true;
+    };
   }, [activeJobId]);
 
   const sendMessage = async () => {
@@ -1203,7 +1224,7 @@ export function Cockpit({
           </div>
         ) : null}
 
-        <div className="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(360px,42%)] bg-slate-50/[0.08]">
+        <div className="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(340px,420px)] bg-slate-50/[0.08]">
           <div className="min-h-0 flex flex-col xl:border-r border-slate-200/80">
             <div
               ref={chatScrollRef}
@@ -1357,7 +1378,7 @@ export function Cockpit({
             </div>
           </div>
 
-          <div className="min-h-0 flex flex-col bg-white/58">
+          <div className="min-h-0 flex flex-col bg-white/58 xl:border-r border-slate-200/80">
             <div className="shrink-0 px-4 md:px-5 py-3 border-b border-slate-200/80 bg-white/90">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
@@ -1412,6 +1433,16 @@ export function Cockpit({
                 首个失败用例: {report.summary.first_failure} ({report.summary.first_failure_verdict}) {report.summary.first_failure_message}
               </div>
             ) : null}
+          </div>
+
+          <div className="min-h-0 flex flex-col bg-white/58">
+            <JobTestsPanel
+              jobId={activeJobId}
+              tests={jobTests}
+              report={report}
+              loading={jobTests === null}
+              errorText={jobTestsError}
+            />
           </div>
         </div>
       </GlassPanel>

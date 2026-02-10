@@ -68,6 +68,8 @@ def test_mcp_ws_job_create_and_subscribe_agent_status(client):
         assert tools_resp["id"] == 2
         tool_names = {t.get("name") for t in (tools_resp.get("result") or {}).get("tools") or []}
         assert "job.create" in tool_names
+        assert "job.get_tests" in tool_names
+        assert "job.get_test_preview" in tool_names
         assert "job.subscribe" in tool_names
 
         ws.send_json(
@@ -101,6 +103,41 @@ def test_mcp_ws_job_create_and_subscribe_agent_status(client):
         jobs_root = Path(os.environ["REALMOI_JOBS_ROOT"])
         assert (jobs_root / job_id / "input" / "job.json").exists()
         assert (jobs_root / job_id / "input" / "tests" / "1.in").exists()
+
+        ws.send_json(
+            {
+                "jsonrpc": "2.0",
+                "id": 41,
+                "method": "tools/call",
+                "params": {"name": "job.get_tests", "arguments": {"job_id": job_id}},
+            }
+        )
+        tests_resp = ws.receive_json()
+        assert tests_resp["id"] == 41
+        tests_payload = (tests_resp.get("result") or {}).get("structuredContent") or {}
+        items = tests_payload.get("items") or []
+        assert isinstance(items, list) and items
+        first = items[0] or {}
+        assert first.get("name") == "1"
+        assert first.get("input_rel") == "tests/1.in"
+        assert first.get("expected_rel") == "tests/1.out"
+
+        ws.send_json(
+            {
+                "jsonrpc": "2.0",
+                "id": 42,
+                "method": "tools/call",
+                "params": {
+                    "name": "job.get_test_preview",
+                    "arguments": {"job_id": job_id, "input_rel": "tests/1.in", "expected_rel": "tests/1.out", "max_bytes": 1024},
+                },
+            }
+        )
+        preview_resp = ws.receive_json()
+        assert preview_resp["id"] == 42
+        preview_payload = (preview_resp.get("result") or {}).get("structuredContent") or {}
+        assert (preview_payload.get("input") or {}).get("text") == "1 2\n"
+        assert (preview_payload.get("expected") or {}).get("text") == "3\n"
 
         ws.send_json(
             {

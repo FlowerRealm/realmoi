@@ -16,6 +16,7 @@ from ..db import SessionLocal
 from ..models import User
 from ..settings import SETTINGS
 from ..services.job_paths import get_job_paths
+from ..services.job_tests import list_job_tests, read_job_test_preview
 from ..services import singletons
 from ..utils.fs import read_json
 from . import jobs as jobs_router
@@ -244,6 +245,31 @@ class McpWebSocketSession:
                 },
             },
             {
+                "name": "job.get_tests",
+                "description": "List extracted tests (from user tests.zip).",
+                "inputSchema": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "properties": {"job_id": {"type": "string"}},
+                    "required": ["job_id"],
+                },
+            },
+            {
+                "name": "job.get_test_preview",
+                "description": "Read preview text for a single test input/expected (tests/xx.in/.out).",
+                "inputSchema": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "properties": {
+                        "job_id": {"type": "string"},
+                        "input_rel": {"type": "string"},
+                        "expected_rel": {"type": ["string", "null"]},
+                        "max_bytes": {"type": "integer"},
+                    },
+                    "required": ["job_id", "input_rel"],
+                },
+            },
+            {
                 "name": "job.subscribe",
                 "description": "Subscribe streams for a job; pushes JSON-RPC notifications: agent_status/terminal.",
                 "inputSchema": {
@@ -396,6 +422,48 @@ class McpWebSocketSession:
                 await self.send_result(
                     msg_id=msg_id,
                     result={"content": [{"type": "text", "text": "ok"}], "structuredContent": {"items": result}},
+                )
+                return
+
+            if tool == "job.get_tests":
+                job_id = str(args.get("job_id") or "").strip()
+                self._ensure_job_access(job_id=job_id)
+                paths = get_job_paths(jobs_root=Path(jobs_router.SETTINGS.jobs_root), job_id=job_id)
+                metas = list_job_tests(job_json_path=paths.job_json, tests_dir=paths.tests_dir)
+                items = [
+                    {
+                        "name": m.name,
+                        "group": m.group,
+                        "input_rel": m.input_rel,
+                        "expected_rel": m.expected_rel,
+                        "expected_present": m.expected_present,
+                    }
+                    for m in metas
+                ]
+                await self.send_result(
+                    msg_id=msg_id,
+                    result={"content": [{"type": "text", "text": "ok"}], "structuredContent": {"items": items, "total": len(items)}},
+                )
+                return
+
+            if tool == "job.get_test_preview":
+                job_id = str(args.get("job_id") or "").strip()
+                input_rel = str(args.get("input_rel") or "").strip()
+                expected_rel = args.get("expected_rel")
+                expected_rel_s = str(expected_rel).strip() if isinstance(expected_rel, str) else None
+                max_bytes = int(args.get("max_bytes") or 0)
+
+                self._ensure_job_access(job_id=job_id)
+                paths = get_job_paths(jobs_root=Path(jobs_router.SETTINGS.jobs_root), job_id=job_id)
+                payload = read_job_test_preview(
+                    tests_dir=paths.tests_dir,
+                    input_rel=input_rel,
+                    expected_rel=expected_rel_s,
+                    max_bytes=max_bytes,
+                )
+                await self.send_result(
+                    msg_id=msg_id,
+                    result={"content": [{"type": "text", "text": "ok"}], "structuredContent": payload},
                 )
                 return
 

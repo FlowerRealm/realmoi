@@ -242,19 +242,57 @@ def run_program(
     stderr = bytearray()
     timeout = False
     output_limit_exceeded = False
+    peak_rss_kb: int | None = None
+    exit_code: int | None = None
+    signal_no: int | None = None
+    reaped = False
+
+    def try_reap_nohang() -> None:
+        nonlocal exit_code, signal_no, peak_rss_kb, reaped
+        if reaped:
+            return
+        try:
+            pid, status, ru = os.wait4(proc.pid, os.WNOHANG)
+        except ChildProcessError:
+            reaped = True
+            if exit_code is None:
+                exit_code = int(proc.returncode) if proc.returncode is not None else 0
+            return
+        except Exception:
+            return
+
+        if pid == 0:
+            return
+
+        reaped = True
+        if os.WIFEXITED(status):
+            exit_code = os.WEXITSTATUS(status)
+        elif os.WIFSIGNALED(status):
+            signal_no = os.WTERMSIG(status)
+            exit_code = -int(signal_no)
+        else:
+            exit_code = 0
+
+        try:
+            maxrss = int(getattr(ru, "ru_maxrss", 0) or 0)
+        except Exception:
+            maxrss = 0
+        peak_rss_kb = max(0, maxrss)
 
     deadline = start + (time_limit_ms / 1000.0)
     while True:
         now = time.monotonic()
-        if now >= deadline and proc.poll() is None:
+        try_reap_nohang()
+
+        if now >= deadline and not reaped:
             timeout = True
             try:
                 os.killpg(proc.pid, signal.SIGKILL)
             except Exception:
                 proc.kill()
-            break
+            try_reap_nohang()
 
-        events = sel.select(timeout=0.05)
+        events = sel.select(timeout=0.05) if sel.get_map() else []
         for key, _mask in events:
             stream = key.data
             data = key.fileobj.read1(4096)  # type: ignore[attr-defined]
@@ -266,24 +304,49 @@ def run_program(
             else:
                 stderr.extend(data)
 
-            if len(stdout) + len(stderr) > output_limit_bytes and proc.poll() is None:
+            if len(stdout) + len(stderr) > output_limit_bytes and not reaped:
                 output_limit_exceeded = True
                 try:
                     os.killpg(proc.pid, signal.SIGKILL)
                 except Exception:
                     proc.kill()
+                try_reap_nohang()
                 break
 
-        if proc.poll() is not None and not sel.get_map():
+        if reaped and not sel.get_map():
             break
 
+        if not sel.get_map() and not reaped:
+            time.sleep(0.02)
+
     end = time.monotonic()
-    exit_code = proc.wait(timeout=1)
+    if not reaped:
+        try:
+            _pid, status, ru = os.wait4(proc.pid, 0)
+            if os.WIFEXITED(status):
+                exit_code = os.WEXITSTATUS(status)
+            elif os.WIFSIGNALED(status):
+                signal_no = os.WTERMSIG(status)
+                exit_code = -int(signal_no)
+            else:
+                exit_code = 0
+            try:
+                peak_rss_kb = max(0, int(getattr(ru, "ru_maxrss", 0) or 0))
+            except Exception:
+                peak_rss_kb = peak_rss_kb
+            reaped = True
+        except Exception:
+            exit_code = int(proc.wait(timeout=1))
+            reaped = True
+
+    if exit_code is None:
+        exit_code = 0
     return {
         "exit_code": int(exit_code),
         "timeout": timeout,
         "output_limit_exceeded": output_limit_exceeded,
         "time_ms": int((end - start) * 1000),
+        "memory_kb": peak_rss_kb,
         "stdout": bytes(stdout),
         "stderr": bytes(stderr),
     }
@@ -423,6 +486,7 @@ def main() -> int:
                     "output_limit_exceeded": False,
                     "signal": None,
                     "time_ms": 0,
+                    "memory_kb": None,
                     "stdout_b64": "",
                     "stderr_b64": "",
                     "stdout_truncated": False,
@@ -490,6 +554,7 @@ def main() -> int:
                 "output_limit_exceeded": r["output_limit_exceeded"],
                 "signal": None,
                 "time_ms": r["time_ms"],
+                "memory_kb": r.get("memory_kb"),
                 "stdout_b64": stdout_b64,
                 "stderr_b64": stderr_b64,
                 "stdout_truncated": stdout_tr,

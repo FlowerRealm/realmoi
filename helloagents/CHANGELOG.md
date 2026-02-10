@@ -2,6 +2,65 @@
 
 本项目使用语义化版本号（SemVer），并遵循 Keep a Changelog 的组织方式记录变更。
 
+## [0.2.114] - 2026-02-10
+
+### 修复
+
+- **[runner/report]**: `memory_kb` 改为通过 `wait4().ru_maxrss` 获取，避免在部分环境下读取 `/proc/<pid>/status` 失败导致前端显示 `—`
+
+### 维护
+
+- **[repo/git]**: 推送变更到 `origin/master`
+  - ⚠️ EHRB: 远端主分支变更 - 用户已确认风险
+  - 检测依据: `master(分支)` + 语义判定（推送到远端主分支）
+
+## [0.2.113] - 2026-02-10
+
+### 调整
+
+- **[frontend/cockpit]**: 样例面板顶部时间指标改为展示“总耗时”（汇总 `tests[].time_ms`），内存继续展示峰值内存
+
+## [0.2.112] - 2026-02-10
+
+### 调整
+
+- **[frontend/cockpit]**: 样例面板顶部指标改为展示实际峰值时间/峰值内存（不再展示 TL/ML 限制）
+
+## [0.2.111] - 2026-02-10
+
+### 调整
+
+- **[frontend/cockpit]**: 样例面板“内存”统一按 MB 单位展示（由 `memory_kb` 转换）
+
+## [0.2.110] - 2026-02-10
+
+### 调整
+
+- **[frontend/cockpit]**: 样例面板按 verdict 整卡变色，移除字节大小与 `exit=...` 展示，新增时间/内存展示（更接近 CPH 插件观感）
+
+### 新增
+
+- **[runner/report]**: `report.json` 的 `tests[]` 新增 `memory_kb`（峰值 RSS 估计）供前端展示“空间”
+
+### 文档
+
+- **[docs]**: 更新 `helloagents/modules/runner.md`、`helloagents/modules/frontend.md` 同步字段与前端展示
+
+## [0.2.109] - 2026-02-10
+
+### 新增
+
+- **[backend/mcp]**: 新增 user tools `job.get_tests` / `job.get_test_preview`，用于拉取 tests.zip 样例输入/输出预览
+- **[frontend/cockpit]**: 新增“样例 / 结果”栏（CPH 风格），与代码并列展示 input/expected/actual（stdout）与 verdict/diff
+
+### 测试
+
+- **[tests/backend]**: MCP WS 用例覆盖新 tools（`job.get_tests` / `job.get_test_preview`）
+
+### 文档
+
+- **[docs]**: 更新 `helloagents/modules/mcp.md`、`helloagents/modules/frontend.md` 同步 tool 与 UI
+
 ## [0.2.108] - 2026-02-10
 
 ### 调整
