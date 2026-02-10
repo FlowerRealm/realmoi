@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { getErrorMessage } from "@/lib/api";
 import { getMcpClient } from "@/lib/mcp";
 import { GlassPanel } from "./GlassPanel";
-import type { JobRun, JobState, Message, PromptData } from "./types";
+import type { JobRun, JobState, Message, PromptData, SolutionArtifact } from "./types";
 import { buildTestsZip } from "./testsZip";
 
 type ReportArtifact = {
@@ -23,6 +23,164 @@ type JobStatusMeta = {
   badgeClassName: string;
   dotClassName: string;
 };
+
+type DiffLine = {
+  kind: "meta" | "hunk" | "add" | "del" | "ctx" | "other";
+  oldLine: number | null;
+  newLine: number | null;
+  text: string;
+};
+
+function parseUnifiedDiff(diffText: string): DiffLine[] {
+  const text = String(diffText || "").replace(/\r/g, "");
+  const lines = text.split("\n");
+  const parsed: DiffLine[] = [];
+
+  let inHunk = false;
+  let oldNo: number | null = null;
+  let newNo: number | null = null;
+
+  const parseHunkHeader = (line: string): { oldStart: number; newStart: number } | null => {
+    const m = line.match(/^@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@/);
+    if (!m) return null;
+    const oldStart = Number(m[1]);
+    const newStart = Number(m[3]);
+    if (!Number.isFinite(oldStart) || !Number.isFinite(newStart)) return null;
+    return { oldStart, newStart };
+  };
+
+  for (const line of lines) {
+    if (
+      line.startsWith("diff --git ")
+      || line.startsWith("index ")
+      || line.startsWith("--- ")
+      || line.startsWith("+++ ")
+    ) {
+      inHunk = false;
+      oldNo = null;
+      newNo = null;
+      parsed.push({ kind: "meta", oldLine: null, newLine: null, text: line });
+      continue;
+    }
+
+    if (line.startsWith("@@")) {
+      const info = parseHunkHeader(line);
+      if (info) {
+        inHunk = true;
+        oldNo = info.oldStart;
+        newNo = info.newStart;
+      } else {
+        inHunk = true;
+        oldNo = null;
+        newNo = null;
+      }
+      parsed.push({ kind: "hunk", oldLine: null, newLine: null, text: line });
+      continue;
+    }
+
+    if (line.startsWith("\\ No newline at end of file")) {
+      parsed.push({ kind: "meta", oldLine: null, newLine: null, text: line });
+      continue;
+    }
+
+    if (inHunk) {
+      if (line.startsWith("+") && !line.startsWith("+++ ")) {
+        const row: DiffLine = { kind: "add", oldLine: null, newLine: newNo, text: line };
+        if (newNo !== null) newNo += 1;
+        parsed.push(row);
+        continue;
+      }
+      if (line.startsWith("-") && !line.startsWith("--- ")) {
+        const row: DiffLine = { kind: "del", oldLine: oldNo, newLine: null, text: line };
+        if (oldNo !== null) oldNo += 1;
+        parsed.push(row);
+        continue;
+      }
+      if (line.startsWith(" ")) {
+        const row: DiffLine = { kind: "ctx", oldLine: oldNo, newLine: newNo, text: line };
+        if (oldNo !== null) oldNo += 1;
+        if (newNo !== null) newNo += 1;
+        parsed.push(row);
+        continue;
+      }
+    }
+
+    const kind: DiffLine["kind"] = line.startsWith("+") ? "add" : line.startsWith("-") ? "del" : "other";
+    parsed.push({ kind, oldLine: null, newLine: null, text: line });
+  }
+
+  while (parsed.length > 0 && !parsed[parsed.length - 1].text.trim()) parsed.pop();
+  return parsed;
+}
+
+function DiffView({ diffText }: { diffText: string }) {
+  const rows = parseUnifiedDiff(diffText).filter((row) => row.kind !== "meta" && row.kind !== "hunk");
+  if (!rows.length) return null;
+
+  const maxOld = rows.reduce((acc, row) => (row.oldLine !== null ? Math.max(acc, row.oldLine) : acc), 0);
+  const maxNew = rows.reduce((acc, row) => (row.newLine !== null ? Math.max(acc, row.newLine) : acc), 0);
+  const lnDigits = Math.max(3, String(Math.max(maxOld, maxNew)).length);
+  const gridTemplateColumns = `${lnDigits + 1}ch 2ch 1fr`;
+
+  const rowBg = (kind: DiffLine["kind"]) => {
+    if (kind === "add") return "bg-emerald-50/70";
+    if (kind === "del") return "bg-rose-50/70";
+    return "bg-white";
+  };
+
+  const rowAccent = (kind: DiffLine["kind"]) => {
+    if (kind === "add") return "border-l-2 border-emerald-400";
+    if (kind === "del") return "border-l-2 border-rose-400";
+    return "border-l-2 border-transparent";
+  };
+
+  const signColor = (kind: DiffLine["kind"]) => {
+    if (kind === "add") return "text-emerald-700";
+    if (kind === "del") return "text-rose-700";
+    return "text-slate-300";
+  };
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="overflow-x-auto">
+        <div className="min-w-max">
+          {rows.map((row, idx) => {
+            const raw = row.text ?? "";
+            const hasPrefix = row.kind === "add" || row.kind === "del" || row.kind === "ctx";
+            const sign = hasPrefix ? raw.slice(0, 1) : "";
+            const code = hasPrefix ? raw.slice(1) : raw;
+            const isLast = idx === rows.length - 1;
+            const lineNo = row.kind === "del" ? row.oldLine : row.newLine;
+
+            return (
+              <div
+                key={idx}
+                style={{ gridTemplateColumns }}
+                className={[
+                  "grid items-start font-mono text-[12px] leading-6",
+                  rowBg(row.kind),
+                  rowAccent(row.kind),
+                  isLast ? "" : "border-b border-slate-100",
+                  "hover:bg-slate-50/70 transition-colors",
+                ].join(" ")}
+              >
+                <div className="px-2 py-0.5 text-right tabular-nums text-slate-400 select-none border-r border-slate-200/70">
+                  {lineNo ?? ""}
+                </div>
+                <div className={["px-1 py-0.5 text-center select-none font-semibold", signColor(row.kind)].join(" ")}>
+                  {sign === " " ? "" : sign}
+                </div>
+                <div className="px-2 py-0.5 whitespace-pre text-slate-800">
+                  {code}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function resolveJobStatusMeta(status: string | null | undefined): JobStatusMeta {
   const normalized = (status ?? "").trim().toLowerCase();
@@ -132,18 +290,35 @@ function buildStatementWithUserMessage(statement: string, userMessage?: string):
   return `${statement}\n\n---\n\n### 用户追加指令\n${userMessage.trim()}\n`;
 }
 
-function formatJobError(error: unknown): string | null {
-  if (!error) return null;
-  if (typeof error === "string") return error;
-  if (typeof error === "object") {
-    const payload = error as { code?: unknown; message?: unknown };
-    const code = typeof payload.code === "string" ? payload.code : null;
-    const message = typeof payload.message === "string" ? payload.message : null;
-    if (code && message) return `${code}: ${message}`;
-    if (message) return message;
-    if (code) return code;
-  }
-  return null;
+function buildFeedbackMessageContent(solution: SolutionArtifact, hasDiff: boolean): string {
+  const parts: string[] = [];
+  parts.push("【解读与反馈】");
+
+  const meta: string[] = [];
+  const issueType = String(solution.seed_code_issue_type || "").trim();
+  if (issueType) meta.push(`类型: ${issueType}`);
+  const wrongLines = Array.isArray(solution.seed_code_wrong_lines) ? solution.seed_code_wrong_lines : [];
+  if (wrongLines.length > 0) meta.push(`错误行: ${wrongLines.join(", ")}`);
+  if (hasDiff) meta.push("右侧可查看差异");
+  if (meta.length > 0) parts.push(meta.join(" · "));
+
+  const pushOptionalSection = (title: string, body: string | undefined) => {
+    const text = String(body || "").trim();
+    if (!text) return;
+    parts.push("");
+    parts.push(`### ${title}`);
+    parts.push(text);
+  };
+
+  parts.push("");
+  parts.push("### 给用户的反馈");
+  parts.push(String(solution.user_feedback_md || "").trim() || "本轮未生成“给用户的反馈”。");
+
+  pushOptionalSection("解法思路", solution.solution_idea);
+  pushOptionalSection("用户代码思路复盘", solution.seed_code_idea);
+  pushOptionalSection("用户代码错误原因", solution.seed_code_bug_reason);
+
+  return parts.join("\n").trim();
 }
 
 function normalizeTerminalChunk(chunkText: string): string {
@@ -356,6 +531,7 @@ function isLegacyJobNotice(message: Message): boolean {
 function buildVisibleMessages(messages: Message[], activeJobId: string | null): Message[] {
   const filtered = messages.filter((m) => {
     if (m.messageKey?.startsWith("job-stream-")) return false;
+    if (m.messageKey?.startsWith("job-final-")) return false;
     if (isLegacyJobNotice(m)) return false;
     if (!m.jobId) return true;
     return Boolean(activeJobId) && m.jobId === activeJobId;
@@ -499,6 +675,8 @@ export function Cockpit({
   const [job, setJob] = useState<JobState | null>(null);
   const [mainCpp, setMainCpp] = useState<string | null>(null);
   const [report, setReport] = useState<ReportArtifact | null>(null);
+  const [solution, setSolution] = useState<SolutionArtifact | null>(null);
+  const [codeView, setCodeView] = useState<"final" | "diff">("final");
 
   const [isLoading, setIsLoading] = useState(false);
   const [inputValue, setInputValue] = useState("");
@@ -739,7 +917,7 @@ export function Cockpit({
     setErrorText(null);
     try {
       const jobId = await createAndStartJob({ prompt: initialPrompt });
-      const run: JobRun = { jobId, createdAt: Date.now() };
+      const run: JobRun = { jobId, createdAt: Date.now(), seedMainCpp: initialPrompt.code ?? "" };
       setRuns([run]);
       activateJob(jobId, "push");
     } catch (e: unknown) {
@@ -761,7 +939,9 @@ export function Cockpit({
     if (!activeJobId) return;
     setMainCpp(null);
     setReport(null);
+    setSolution(null);
     setJob(null);
+    setCodeView("final");
     sealedJobsRef.current[activeJobId] = false;
     terminalStreamTextRef.current[activeJobId] = "";
     agentLiveStateRef.current[activeJobId] = { reasoning: "", execution: "", result: "" };
@@ -783,7 +963,7 @@ export function Cockpit({
     try {
       const seed = lastMainCppRef.current || initialPrompt.code || "";
       const jobId = await createAndStartJob({ prompt: initialPrompt, userMessage: userMsg, seedMainCpp: seed });
-      const run: JobRun = { jobId, createdAt: Date.now(), userMessage: userMsg };
+      const run: JobRun = { jobId, createdAt: Date.now(), userMessage: userMsg, seedMainCpp: seed };
       setRuns((prev) => [run, ...prev]);
       activateJob(jobId, "push");
     } catch (e: unknown) {
@@ -892,38 +1072,31 @@ export function Cockpit({
         if (t) clearInterval(t);
         finalizeLiveTokenStream(activeJobId);
 
-        if (st.status === "succeeded") {
-          const client = getMcpClient();
-          const artifacts = await client.callTool<{ items?: Record<string, unknown> }>("job.get_artifacts", {
-            job_id: activeJobId,
-            names: ["main.cpp", "report.json"],
-          });
-	          const items = artifacts?.items ?? {};
-          const cpp = (items["main.cpp"] as string | null) ?? null;
-          const rep = (items["report.json"] as ReportArtifact | null) ?? null;
-          if (cancelled) return;
-          setMainCpp(cpp);
-          setReport(rep);
+        const artifacts = await client.callTool<{ items?: Record<string, unknown> }>("job.get_artifacts", {
+          job_id: activeJobId,
+          names: ["main.cpp", "solution.json", "report.json"],
+        });
+        const items = artifacts?.items ?? {};
+        const cpp = (items["main.cpp"] as string | null) ?? null;
+        const sol = (items["solution.json"] as SolutionArtifact | null) ?? null;
+        const rep = (items["report.json"] as ReportArtifact | null) ?? null;
+        if (cancelled) return;
+        setMainCpp(cpp);
+        setSolution(sol);
+        setReport(rep);
 
-          upsertAssistantMessage({
-            role: "assistant",
-            jobId: activeJobId,
-            messageKey: `job-final-${activeJobId}`,
-            content: `Job 已结束（status=${st.status}）。代码与测试详情请查看右侧面板。`,
-          });
-        } else {
-          const errorHint = formatJobError(st.error);
-          if (cancelled) return;
-          setMainCpp(null);
-          setReport(null);
-          upsertAssistantMessage({
-            role: "assistant",
-            jobId: activeJobId,
-            messageKey: `job-final-${activeJobId}`,
-            content: errorHint
-              ? `Job 已结束（status=${st.status}）。失败原因：${errorHint}`
-              : `Job 已结束（status=${st.status}）。`,
-          });
+        if (sol) {
+          const hasDiffLocal = Boolean(String(sol.seed_code_full_diff || "").trim() || String(sol.seed_code_fix_diff || "").trim());
+          const feedbackText = buildFeedbackMessageContent(sol, hasDiffLocal);
+          if (feedbackText.trim()) {
+            upsertAssistantMessage({
+              role: "assistant",
+              jobId: activeJobId,
+              messageKey: `job-feedback-${activeJobId}`,
+              streaming: false,
+              content: feedbackText,
+            });
+          }
         }
       } catch (e: unknown) {
         if (cancelled) return;
@@ -961,6 +1134,8 @@ export function Cockpit({
   const currentRunStatus = runs.find((run) => run.jobId === activeJobId)?.status;
   const statusMeta = resolveJobStatusMeta(job?.status ?? currentRunStatus);
   const isRunningStatus = statusMeta.lifecycle === "running";
+  const diffText = (solution?.seed_code_full_diff?.trim() || solution?.seed_code_fix_diff?.trim() || "");
+  const hasDiff = Boolean(diffText);
 
   return (
     <div className="h-full w-full min-h-0 p-4 md:p-4 animate-in fade-in duration-500 bg-transparent overflow-hidden">
@@ -1036,6 +1211,7 @@ export function Cockpit({
             >
               {visibleMessages.map((m, i) => {
                 const isTokenStream = m.messageKey?.startsWith("job-token-") ?? false;
+                const isFeedbackMessage = m.messageKey?.startsWith("job-feedback-") ?? false;
                 const tokenView = isTokenStream ? splitTokenStreamContent(m.content) : null;
                 return (
                   <div
@@ -1044,7 +1220,7 @@ export function Cockpit({
                   >
                     <div
                       className={[
-                        isTokenStream ? "w-full max-w-full rounded-2xl" : "max-w-[92%] rounded-2xl",
+                        isTokenStream || isFeedbackMessage ? "w-full max-w-full rounded-2xl" : "max-w-[92%] rounded-2xl",
                         m.role === "user"
                           ? "p-3 md:p-4 bg-indigo-600 text-white shadow-sm shadow-indigo-600/10 border border-indigo-500"
                           : isTokenStream
@@ -1135,6 +1311,7 @@ export function Cockpit({
                             ) : (
                               <div className="whitespace-pre-wrap break-words text-slate-700">{cleanTokenText(m.content)}</div>
                             )}
+
                           </div>
                         ) : (
                           m.content
@@ -1182,14 +1359,52 @@ export function Cockpit({
 
           <div className="min-h-0 flex flex-col bg-white/58">
             <div className="shrink-0 px-4 md:px-5 py-3 border-b border-slate-200/80 bg-white/90">
-              <div className="text-xs font-semibold text-slate-600 uppercase tracking-wide">代码</div>
-              <div className="text-[11px] text-slate-500 mt-1">main.cpp（最新产物）</div>
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-xs font-semibold text-slate-600 uppercase tracking-wide">代码</div>
+                  <div className="text-[11px] text-slate-500 mt-1">
+                    {codeView === "diff" ? "差异（diff）" : "最终代码（main.cpp）"}
+                  </div>
+                </div>
+                <div className="shrink-0 flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1">
+                  <button
+                    onClick={() => setCodeView("final")}
+                    className={[
+                      "px-2.5 py-1 rounded-md text-[11px] font-semibold",
+                      codeView === "final" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100",
+                    ].join(" ")}
+                  >
+                    最终代码
+                  </button>
+                  <button
+                    onClick={() => setCodeView("diff")}
+                    disabled={!hasDiff}
+                    className={[
+                      "px-2.5 py-1 rounded-md text-[11px] font-semibold",
+                      codeView === "diff" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100",
+                      !hasDiff ? "opacity-40 cursor-not-allowed" : "",
+                    ].join(" ")}
+                  >
+                    差异
+                  </button>
+                </div>
+              </div>
             </div>
 
             <div className="flex-1 min-h-0 overflow-auto custom-scrollbar">
-              <pre className="p-4 md:p-5 text-slate-700 whitespace-pre font-mono leading-relaxed text-xs md:text-sm">
+              {codeView === "diff" ? (
+                <div className="p-4 md:p-5">
+                  {hasDiff ? (
+                    <DiffView diffText={diffText} />
+                  ) : (
+                    <div className="text-[12px] text-slate-500">本轮没有可展示的差异（diff）。</div>
+                  )}
+                </div>
+              ) : (
+                <pre className="p-4 md:p-5 text-slate-700 whitespace-pre font-mono leading-relaxed text-xs md:text-sm">
 {mainCpp ?? "// 暂无代码（可能尚未生成或已清理）"}
-              </pre>
+                </pre>
+              )}
             </div>
 
             {report?.summary?.first_failure ? (

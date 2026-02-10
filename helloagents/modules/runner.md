@@ -30,6 +30,11 @@
   - `solution_idea`：最终算法思路
   - `seed_code_idea`：用户原代码思路复盘（如提供）
   - `seed_code_bug_reason`：用户原代码错误原因
+  - `user_feedback_md`：面向用户的反馈（按“思路错误/思路正确但有瑕疵”输出）
+  - `seed_code_issue_type`：用户代码问题类型（`wrong_approach` / `minor_bug` / `no_seed_code`）
+  - `seed_code_wrong_lines`：关键错误行号（1-based，仅 `minor_bug`）
+  - `seed_code_fix_diff`：统一 diff（仅 `minor_bug`，由模型输出的“补丁 diff”）
+  - `seed_code_full_diff`：统一 diff（runner 计算的“全量 diff”，对比 seed→最终 `main.cpp`，用于前端差异视图）
 - `report.json`：编译/测试结构化报告（compile_only / compile_and_test）
   - test 阶段首先写入：`output/artifacts/attempt_{n}/test_output/report.json`
   - 后端会复制为：`output/report.json`（便于前端稳定读取）
@@ -63,13 +68,13 @@
 
 ## 提示词与重试
 
-- generate：要求仅输出符合 JSON Schema 的单个 JSON 对象，并写入阶段状态（用于前端展示）
-- repair：结合 `report.json` 摘要对生成代码做“整文件修复”
-- 最终说明语言：`solution_idea` / `seed_code_idea` / `seed_code_bug_reason` 强制要求中文输出（generate/repair/格式修复重试均生效）
-  - 新增落盘前语言校验：三个说明字段任一未包含中文字符则判定为失败并触发重试
-- Schema 要求（上游 Responses 严格校验）：
-  - `runner/schemas/codex_output_schema.json` 的 `required` 必须覆盖 `properties` 全部键
-  - 当前必填字段：`main_cpp` / `solution_idea` / `seed_code_idea` / `seed_code_bug_reason` / `assumptions` / `complexity`
+- generate：要求仅输出符合 JSON Schema 的单个 JSON 对象，必须包含 `main_cpp`
+- repair：结合 `report.json` 摘要对生成代码做“整文件修复”，同样只输出一个 JSON 对象并包含 `main_cpp`
+- 补充说明字段：
+  - prompt 会引导 Codex 额外输出 `solution_idea/seed_code_idea/seed_code_bug_reason` 与“面向用户的反馈”字段
+  - runner 会把这些字段（如存在）摘取落盘到 `output/solution.json`，供前端展示/下载
+- Schema 约束（以代码为准）：
+  - `runner/schemas/codex_output_schema.json` 当前仅强制 `main_cpp`（`additionalProperties=true`，允许附带更多字段）
 - 重试策略：
   - runner 内：infra 重试（退避）+ format 重试（要求严格 JSON 输出）
   - backend 外层：quality 重试（generate+test）→ repair prompt

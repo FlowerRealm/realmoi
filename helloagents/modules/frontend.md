@@ -109,7 +109,8 @@
 - Cockpit 标签精简（2026-02-08）：先移除 `TERMINAL` 页签，后续继续移除 `STATUS` 页签；当前稳定为 `CHAT/CODE` 双栏，终端增量日志仅作为 `CHAT` Token 流来源
 - 顶栏避让（2026-02-08）：`AssistantApp` 主容器顶部留白提升为 `pt-16 md:pt-20`，消除页面主体与固定顶栏重叠
 - Cockpit 双栏（2026-02-08）：移除左侧信息栏与 `STATUS` 页签，工作区改为 `CHAT`（左）+ `CODE`（右）并列布局，状态信息仅保留在顶部摘要与最终结果消息
-- 失败态行为：仅成功任务拉取 artifacts；失败任务直接显示后端错误原因并跳过 artifacts 请求
+- 失败态行为：Job 进入终态后会尽量拉取 `main.cpp/solution.json/report.json`，即使失败也方便用户查看失败详情与中间产物
+- 用户反馈展示：Job 终态拉取到 `solution.json` 后，会在左侧新增一条 `assistant` 消息（`messageKey=job-feedback-*`）展示“解读与反馈”（含 `user_feedback_md/solution_idea/seed_code_*`）；右侧代码面板支持“最终代码/差异”切换，图形化 diff 视图优先渲染 `seed_code_full_diff`（seed→最终 `main.cpp` 的全量 diff），缺失时回退 `seed_code_fix_diff`（不再输出“Job 已结束...请查看右侧面板”提示）
 - 模型列表加载：普通用户不再触发 admin upstream 接口探测，避免 403 噪音
 - New Job 参数面板：已移除 `Search` 与 `Compare Mode` 字段，当前提供 `Model`、`思考量（low/medium/high/xhigh）`、`Time Limit`、`Memory`
 - 模型下拉来源优先级：先读本地缓存（`realmoi_admin_upstream_models_cache_v1`，180 秒内直出）→ 优先 `GET /api/models/live` → 失败时回退 `GET /api/models`

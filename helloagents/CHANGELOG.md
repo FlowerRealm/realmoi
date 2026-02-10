@@ -2,6 +2,42 @@
 
 本项目使用语义化版本号（SemVer），并遵循 Keep a Changelog 的组织方式记录变更。
 
+## [0.2.108] - 2026-02-10
+
+### 调整
+
+- **[frontend/cockpit]**: “解读与反馈”改为一条 `assistant` 消息（`messageKey=job-feedback-*`），用于稳定控制其在消息流中的位置
+
+## [0.2.107] - 2026-02-10
+
+### 调整
+
+- **[frontend/cockpit]**: “解读与反馈”移动到左侧 `job-token-*` 的思考过程下方展示，保证与思考内容连续呈现
+- **[frontend/cockpit]**: 右侧“差异”视图优先渲染 `seed_code_full_diff`（seed→最终 `main.cpp` 的全量 diff）
+- **[runner/artifacts]**: `solution.json` 新增 `seed_code_full_diff`（runner 计算的全量 diff）
+
+### 文档
+
+- **[docs]**: 更新 `helloagents/modules/runner.md`、`helloagents/modules/frontend.md` 同步字段与前端展示行为
+
+## [0.2.106] - 2026-02-10
+
+### 调整
+
+- **[frontend/cockpit]**: 左侧新增“解读与反馈”折叠区展示 `solution.json`；右侧代码面板支持“最终代码/差异”切换，并以图形化 diff 视图展示 `seed_code_fix_diff`；移除默认的“Job 已结束...请查看右侧面板”提示
+
+## [0.2.105] - 2026-02-10
+
+### 调整
+
+- **[runner/prompt]**: generate/repair 提示词新增“面向用户的反馈”输出规范（区分“思路错误 / 思路正确但有瑕疵”，并要求给出错误行号与 diff）
+- **[runner/artifacts]**: `solution.json` 落盘新增 `user_feedback_md/seed_code_issue_type/seed_code_wrong_lines/seed_code_fix_diff` 字段
+- **[frontend/cockpit]**: Job 终态拉取 `solution.json` 并在右侧面板新增“解读与反馈”折叠区展示；失败 Job 也会尝试拉取 artifacts 便于排查
+
+### 文档
+
+- **[docs]**: 更新 `helloagents/modules/runner.md`、`helloagents/modules/frontend.md` 同步产物字段与前端展示行为
+
 ## [0.2.104] - 2026-02-10
 
 ### 修复

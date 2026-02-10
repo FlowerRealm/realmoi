@@ -29,6 +29,7 @@ export interface JobRun {
   createdAt: number;
   userMessage?: string;
   status?: string;
+  seedMainCpp?: string;
 }
 
 export interface AssistantSession {
@@ -67,6 +68,11 @@ export type SolutionArtifact = {
   solution_idea: string;
   seed_code_idea: string;
   seed_code_bug_reason: string;
+  user_feedback_md?: string;
+  seed_code_issue_type?: "wrong_approach" | "minor_bug" | "no_seed_code" | string;
+  seed_code_wrong_lines?: number[];
+  seed_code_fix_diff?: string;
+  seed_code_full_diff?: string;
   assumptions?: string[];
   complexity?: string;
 };

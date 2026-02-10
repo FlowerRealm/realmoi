@@ -132,6 +132,19 @@ def test_generate_prompt_does_not_ask_codex_to_run_tests() -> None:
     assert "python3 -X utf8" not in prompt
 
 
+def test_generate_prompt_mentions_user_feedback_fields() -> None:
+    prompt = build_prompt_generate(
+        {
+            "problem": {"statement_md": "# A"},
+            "seed": {"current_code_cpp": "int main() { return 0; }"},
+        }
+    )
+    assert "user_feedback_md" in prompt
+    assert "seed_code_issue_type" in prompt
+    assert "seed_code_wrong_lines" in prompt
+    assert "seed_code_fix_diff" in prompt
+
+
 def test_repair_prompt_does_not_ask_codex_to_run_tests() -> None:
     prompt = build_prompt_repair(
         {
@@ -144,6 +157,21 @@ def test_repair_prompt_does_not_ask_codex_to_run_tests() -> None:
     assert "独立测评机统一执行" in prompt
     assert "runner_test.py" not in prompt
     assert "python3 -X utf8" not in prompt
+
+
+def test_repair_prompt_mentions_user_feedback_fields() -> None:
+    prompt = build_prompt_repair(
+        {
+            "problem": {"statement_md": "# A"},
+            "seed": {"current_code_cpp": "int main() { return 0; }"},
+        },
+        "first_failure=1 verdict=WA",
+        "int main() { return 0; }",
+    )
+    assert "user_feedback_md" in prompt
+    assert "seed_code_issue_type" in prompt
+    assert "seed_code_wrong_lines" in prompt
+    assert "seed_code_fix_diff" in prompt
 
 
 def test_generate_prompt_requires_mcp_self_test_when_tests_present() -> None:
