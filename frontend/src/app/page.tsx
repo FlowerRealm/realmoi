@@ -1,8 +1,8 @@
 "use client";
 
 import { RequireAuth } from "@/components/RequireAuth";
-import { AppHeader } from "@/components/AppHeader";
 import { AssistantApp } from "@/components/assistant/AssistantApp";
+import { AppHeader } from "@/components/AppHeader";
 
 export default function Home() {
   return (

@@ -1,18 +1,186 @@
-@import "tailwindcss";
+@layer base, semi, components, utilities;
 
-:root {
-  --background: #f8fafc;
-  --foreground: #1e293b;
-  --surface: rgba(255, 255, 255, 0.6);
-  --surface-strong: rgba(255, 255, 255, 0.78);
-  --border: rgba(255, 255, 255, 0.7);
-  --ring: rgba(79, 70, 229, 0.28);
-  --text-primary: #1e293b;
-  --text-secondary: #64748b;
-  --text-muted: #94a3b8;
-  --accent: #4f46e5;
-  --accent-hover: #4338ca;
-  --danger: #dc2626;
+@import "tailwindcss";
+@import "../../node_modules/@douyinfe/semi-ui/dist/css/semi.css" layer(semi);
+
+:root,
+:host {
+  /* ==================== RealmOI · 冷淡淡雅（鼠尾草绿） ====================
+     - 禁用渐变：全局不使用 linear-gradient / radial-gradient
+     - 去边框化：用微压差 + 轻阴影建立层次
+     - 低饱和：S 控制在 [3, 25]，强调“淡雅”
+  */
+  --background: hsl(152 16% 98%); /* 宣纸位 */
+  --foreground: hsl(165 10% 14%); /* 文字主色（带一点鼠尾草的冷感灰） */
+
+  --surface: hsl(152 12% 94%); /* 阴影位 */
+  --surface-strong: hsl(152 10% 92%);
+  --surface-2: hsl(152 9% 91%);
+
+  --border: rgba(12, 20, 16, 0.08); /* 仅用于分隔/焦点，不做“框” */
+  --ring: rgba(25, 56, 45, 0.10);
+
+  --text-primary: hsl(165 10% 14%);
+  --text-secondary: hsl(165 7% 42%);
+  --text-muted: hsl(165 6% 56%);
+
+  --accent: hsl(152 16% 34%); /* 落墨位（行动色） */
+  --accent-hover: hsl(152 16% 30%);
+  --danger: hsl(0 11% 47%); /* 克制红 */
+
+  --shadow-soft: 0 10px 30px rgba(12, 20, 16, 0.07);
+  --shadow-soft-2: 0 7px 18px rgba(12, 20, 16, 0.05);
+
+  /* Component tokens (keep UI consistent across Tailwind + Semi + custom) */
+  --btn-primary-bg: var(--accent);
+  --btn-primary-hover: var(--accent-hover);
+  --btn-primary-active: color-mix(in hsl, var(--accent) 75%, black);
+  --btn-secondary-bg: color-mix(in hsl, var(--surface) 78%, white);
+  --btn-secondary-hover: color-mix(in hsl, var(--surface-2) 70%, white);
+
+  --icon-default: var(--text-secondary);
+  --icon-muted: var(--text-muted);
+
+  /* Layout rhythm (Swiss whitespace, Material geometry) */
+  --space-1: 6px;
+  --space-2: 10px;
+  --space-3: 14px;
+  --space-4: 18px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  --radius-sm: 10px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 18px;
+
+  /* 用于 rgba(var(--semi-xxx-0), a) 的老式写法：这里让它们也“变绿” */
+  --semi-blue-0: 244, 246, 245;
+  --semi-blue-1: 232, 237, 235;
+  --semi-blue-2: 215, 224, 220;
+  --semi-blue-3: 179, 198, 189;
+  --semi-blue-4: 126, 160, 144;
+  --semi-blue-5: 73, 101, 88; /* accent */
+  --semi-blue-6: 64, 89, 77;
+  --semi-blue-7: 56, 77, 67;
+  --semi-blue-8: 47, 65, 57;
+  --semi-blue-9: 39, 53, 46;
+
+  /* Semi 有些地方用 indigo 变量，统一映射到同一套鼠尾草绿阶 */
+  --semi-indigo-0: var(--semi-blue-0);
+  --semi-indigo-1: var(--semi-blue-1);
+  --semi-indigo-2: var(--semi-blue-2);
+  --semi-indigo-3: var(--semi-blue-3);
+  --semi-indigo-4: var(--semi-blue-4);
+  --semi-indigo-5: var(--semi-blue-5);
+  --semi-indigo-6: var(--semi-blue-6);
+  --semi-indigo-7: var(--semi-blue-7);
+  --semi-indigo-8: var(--semi-blue-8);
+  --semi-indigo-9: var(--semi-blue-9);
+
+  --semi-green-0: 232, 240, 236;
+  --semi-red-0: 133, 107, 107; /* 克制红（用于少量 rgba 映射） */
+  --semi-orange-0: 144, 122, 101;
+  --semi-grey-2: 120, 130, 126;
+}
+
+/* Semi UI 默认把主题 token 写在 body 上（而不是 :root），必须在 body 也覆写一次，
+   否则会残留默认蓝色按钮/图标（用户硬刷新也不会变）。 */
+body,
+body .semi-always-light,
+body[theme-mode=dark] .semi-always-light,
+:host,
+:host .semi-always-light {
+  /* Semi 的基础色阶也在 body 上（semi.css 默认是蓝系），这里必须一起覆写，否则会有残留蓝色图标/标记。 */
+  --semi-blue-0: 244, 246, 245;
+  --semi-blue-1: 232, 237, 235;
+  --semi-blue-2: 215, 224, 220;
+  --semi-blue-3: 179, 198, 189;
+  --semi-blue-4: 126, 160, 144;
+  --semi-blue-5: 73, 101, 88; /* accent */
+  --semi-blue-6: 64, 89, 77;
+  --semi-blue-7: 56, 77, 67;
+  --semi-blue-8: 47, 65, 57;
+  --semi-blue-9: 39, 53, 46;
+
+  /* Semi 的 secondary 默认是 light-blue：同样映射回同一套鼠尾草绿阶，拒绝杂色 */
+  --semi-light-blue-0: var(--semi-blue-0);
+  --semi-light-blue-1: var(--semi-blue-1);
+  --semi-light-blue-2: var(--semi-blue-2);
+  --semi-light-blue-3: var(--semi-blue-3);
+  --semi-light-blue-4: var(--semi-blue-4);
+  --semi-light-blue-5: var(--semi-blue-5);
+  --semi-light-blue-6: var(--semi-blue-6);
+  --semi-light-blue-7: var(--semi-blue-7);
+  --semi-light-blue-8: var(--semi-blue-8);
+  --semi-light-blue-9: var(--semi-blue-9);
+
+  /* Semi 的 indigo 也统一回同一套色阶（有些组件直接用 indigo） */
+  --semi-indigo-0: var(--semi-blue-0);
+  --semi-indigo-1: var(--semi-blue-1);
+  --semi-indigo-2: var(--semi-blue-2);
+  --semi-indigo-3: var(--semi-blue-3);
+  --semi-indigo-4: var(--semi-blue-4);
+  --semi-indigo-5: var(--semi-blue-5);
+  --semi-indigo-6: var(--semi-blue-6);
+  --semi-indigo-7: var(--semi-blue-7);
+  --semi-indigo-8: var(--semi-blue-8);
+  --semi-indigo-9: var(--semi-blue-9);
+
+  /* Semi UI tokens（让现有 Semi 组件自然“染色”成鼠尾草绿） */
+  --semi-color-bg-0: var(--background);
+  --semi-color-bg-1: var(--surface);
+  --semi-color-fill-0: var(--surface);
+  --semi-color-fill-1: var(--surface-2);
+  --semi-color-border: var(--border);
+  --semi-color-focus-border: color-mix(in hsl, var(--accent) 55%, white);
+
+  --semi-color-text-0: var(--text-primary);
+  --semi-color-text-1: var(--text-secondary);
+  --semi-color-text-2: color-mix(in hsl, var(--text-secondary) 78%, white);
+  --semi-color-text-3: color-mix(in hsl, var(--text-secondary) 58%, white);
+  --semi-color-white: #ffffff;
+
+  --semi-color-primary: var(--accent);
+  --semi-color-primary-hover: var(--accent-hover);
+  --semi-color-primary-active: color-mix(in hsl, var(--accent) 75%, black);
+  --semi-color-primary-light-default: color-mix(in hsl, var(--accent) 14%, white);
+  --semi-color-primary-light-hover: color-mix(in hsl, var(--accent) 20%, white);
+  --semi-color-primary-light-active: color-mix(in hsl, var(--accent) 26%, white);
+  --semi-color-primary-disabled: color-mix(in hsl, var(--accent) 24%, white);
+
+  /* 把 Semi 的 secondary/light-blue 也统一到同一套色相，拒绝杂色 */
+  --semi-color-secondary: var(--semi-color-primary);
+  --semi-color-secondary-hover: var(--semi-color-primary-hover);
+  --semi-color-secondary-active: var(--semi-color-primary-active);
+  --semi-color-secondary-light-default: var(--semi-color-primary-light-default);
+  --semi-color-secondary-light-hover: var(--semi-color-primary-light-hover);
+
+  --semi-color-danger: var(--danger);
+  --semi-color-danger-hover: color-mix(in hsl, var(--danger) 82%, black);
+  --semi-color-danger-light-default: color-mix(in hsl, var(--danger) 12%, white);
+  --semi-color-danger-light-hover: color-mix(in hsl, var(--danger) 18%, white);
+
+  --semi-color-success: hsl(152 20% 38%);
+  --semi-color-success-light-default: color-mix(in hsl, var(--semi-color-success) 12%, white);
+  --semi-color-success-light-hover: color-mix(in hsl, var(--semi-color-success) 18%, white);
+
+  --semi-color-warning: hsl(36 12% 48%);
+  --semi-color-warning-light-default: color-mix(in hsl, var(--semi-color-warning) 12%, white);
+
+  /* 让 “info/link” 也走同一套鼠尾草绿（避免出现默认蓝色 info 图标/提示） */
+  --semi-color-info: var(--semi-color-primary);
+  --semi-color-info-hover: var(--semi-color-primary-hover);
+  --semi-color-info-active: var(--semi-color-primary-active);
+  --semi-color-info-light-default: var(--semi-color-primary-light-default);
+  --semi-color-info-light-hover: var(--semi-color-primary-light-hover);
+  --semi-color-info-light-active: var(--semi-color-primary-light-active);
+  --semi-color-info-disabled: var(--semi-color-primary-disabled);
+
+  --semi-color-link: var(--accent);
+  --semi-color-link-hover: var(--accent-hover);
+  --semi-color-link-visited: var(--accent);
+  --semi-color-overlay-bg: rgba(12, 20, 16, 0.28);
 }
 
 @theme inline {
@@ -31,6 +199,7 @@ body {
     Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
   min-height: 100vh;
   line-height: 1.5;
+  letter-spacing: 0.005em;
 }
 
 *,
@@ -44,56 +213,48 @@ body {
   inset: 0;
   z-index: -10;
   overflow: hidden;
-  background:
-    radial-gradient(circle at 8% 10%, rgba(59, 130, 246, 0.14), transparent 45%),
-    radial-gradient(circle at 88% 84%, rgba(99, 102, 241, 0.16), transparent 45%),
-    radial-gradient(circle at 72% 22%, rgba(168, 85, 247, 0.11), transparent 42%),
-    #f8fafc;
+  background: var(--background);
 }
 
 .realm-bg::after {
   content: "";
   position: absolute;
   inset: 0;
-  background:
-    radial-gradient(#d1d9e5 1px, transparent 1px);
-  background-size: 28px 28px;
-  opacity: 0.35;
+  /* 无渐变：用极淡的 SVG 点阵制造“空气感” */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Ccircle cx='1' cy='1' r='1' fill='%23101a12' fill-opacity='0.06'/%3E%3C/svg%3E");
+  background-size: 24px 24px;
+  opacity: 0.45;
 }
 
 .glass-panel {
-  border-radius: 18px;
-  border: 1px solid rgba(203, 213, 225, 0.7);
-  background: rgba(255, 255, 255, 0.82);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  box-shadow: 0 8px 26px rgba(15, 23, 42, 0.08);
+  border-radius: var(--radius-lg);
+  border: 0;
+  background: var(--surface);
+  box-shadow: var(--shadow-soft-2);
 }
 
 .glass-panel-strong {
-  border-radius: 18px;
-  border: 1px solid rgba(203, 213, 225, 0.78);
-  background: rgba(255, 255, 255, 0.9);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
-  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.1);
+  border-radius: var(--radius-lg);
+  border: 0;
+  background: var(--surface-strong);
+  box-shadow: var(--shadow-soft);
 }
 
 .glass-chip {
   border-radius: 999px;
-  border: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.66);
+  border: 0;
+  background: color-mix(in hsl, var(--surface-2) 80%, white);
   color: var(--text-secondary);
 }
 
 .glass-input {
   width: 100%;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.84);
-  background: rgba(255, 255, 255, 0.74);
+  border-radius: var(--radius-md);
+  border: 0;
+  background: var(--surface-2);
   padding: 0.56rem 0.8rem;
   color: var(--text-primary);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
   outline: none;
   transition: border-color 180ms ease, box-shadow 180ms ease, background-color 180ms ease;
 }
@@ -103,33 +264,34 @@ body {
 }
 
 .glass-input:focus-visible {
-  border-color: rgba(79, 70, 229, 0.4);
   box-shadow: 0 0 0 4px var(--ring);
-  background: rgba(255, 255, 255, 0.9);
+  background: color-mix(in hsl, var(--surface-2) 65%, white);
 }
 
 .glass-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   border: 1px solid transparent;
   padding: 0.5rem 0.9rem;
   font-size: 0.875rem;
   font-weight: 600;
   letter-spacing: 0.01em;
   color: white;
-  background: linear-gradient(135deg, var(--accent), #2563eb);
-  transition: transform 150ms ease, box-shadow 150ms ease, opacity 150ms ease;
-  box-shadow: 0 8px 18px rgba(79, 70, 229, 0.28);
+  background: var(--btn-primary-bg);
+  transition: opacity 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
+  box-shadow: var(--shadow-soft-2);
 }
 
 .glass-btn:hover {
-  transform: translateY(-1px);
+  background: var(--btn-primary-hover);
+  opacity: 0.96;
 }
 
 .glass-btn:active {
-  transform: translateY(0);
+  background: var(--btn-primary-active);
+  opacity: 0.92;
 }
 
 .glass-btn:disabled {
@@ -140,41 +302,50 @@ body {
 
 .glass-btn-secondary {
   color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.82);
-  border-color: rgba(255, 255, 255, 0.9);
-  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.08);
+  background: var(--btn-secondary-bg);
+  border-color: transparent;
+  box-shadow: var(--shadow-soft-2);
+}
+
+.glass-btn-secondary:hover {
+  background: var(--btn-secondary-hover);
+  opacity: 0.98;
+}
+
+.glass-btn-secondary:active {
+  background: var(--surface-2);
+  opacity: 0.95;
 }
 
 .glass-btn-danger {
   color: white;
-  background: linear-gradient(135deg, #ef4444, var(--danger));
-  box-shadow: 0 8px 18px rgba(220, 38, 38, 0.2);
+  background: var(--danger);
+  box-shadow: var(--shadow-soft-2);
 }
 
 .glass-alert {
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   padding: 0.72rem 0.88rem;
-  border: 1px solid;
+  border: 0;
   font-size: 0.875rem;
+  box-shadow: var(--shadow-soft-2);
 }
 
 .glass-alert-error {
-  color: #b91c1c;
-  border-color: rgba(252, 165, 165, 0.6);
-  background: rgba(254, 242, 242, 0.8);
+  color: var(--semi-color-danger);
+  background: var(--semi-color-danger-light-default);
 }
 
 .glass-alert-success {
-  color: #047857;
-  border-color: rgba(110, 231, 183, 0.62);
-  background: rgba(236, 253, 245, 0.84);
+  color: var(--semi-color-success);
+  background: var(--semi-color-success-light-default);
 }
 
 .glass-code {
   border-radius: 16px;
-  border: 1px solid rgba(203, 213, 225, 0.7);
-  background: rgba(241, 245, 249, 0.9);
-  color: #0f172a;
+  border: 0;
+  background: var(--surface);
+  color: var(--text-primary);
   font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
 
@@ -192,30 +363,1132 @@ body {
 
 .glass-table {
   border-radius: 18px;
-  border: 1px solid rgba(203, 213, 225, 0.65);
-  background: rgba(255, 255, 255, 0.82);
+  border: 0;
+  background: var(--surface);
   overflow: hidden;
 }
 
 .glass-table thead {
-  background: rgba(241, 245, 249, 0.9);
+  background: color-mix(in hsl, var(--surface) 70%, white);
 }
 
 .glass-table tbody tr {
-  border-top: 1px solid rgba(226, 232, 240, 0.8);
+  border-top: 1px solid color-mix(in hsl, var(--border) 70%, transparent);
 }
 
 .glass-table tbody tr:hover {
-  background: rgba(248, 250, 252, 0.92);
+  background: color-mix(in hsl, var(--surface-2) 65%, white);
+}
+
+/* ==================== new-api 内容区样式对齐（仅作用于 .newapi-scope） ==================== */
+.newapi-scope {
+  font-family: inherit;
+  color: var(--semi-color-text-0);
+  position: relative;
+  background-color: transparent;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.newapi-scope code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, "Courier New", monospace;
+}
+
+@layer components {
+  /* ==================== Icons ==================== */
+  .realm-icon-muted {
+    color: var(--icon-muted);
+    opacity: 0.95;
+  }
+
+  /* Default icon tone (avoid “too dark”); interactive contexts inherit currentColor. */
+  .semi-icon,
+  .lucide {
+    color: var(--icon-default);
+    opacity: 0.9;
+  }
+
+  a .semi-icon,
+  button .semi-icon,
+  a .lucide,
+  button .lucide {
+    color: currentColor;
+    opacity: 1;
+  }
+
+  /* Icon color rule: use currentColor; don't allow hard-coded fills/strokes to introduce blue/black. */
+  .semi-icon svg [fill]:not([fill="none"]) {
+    fill: currentColor;
+  }
+
+  .semi-icon svg [stroke] {
+    stroke: currentColor;
+  }
+
+  /* ==================== Form fields (native inputs) ==================== */
+  .newapi-scope .realm-field {
+    width: 100%;
+    border: 0;
+    outline: none;
+    background: var(--semi-color-fill-1);
+    color: var(--semi-color-text-0);
+    border-radius: var(--radius-lg);
+    padding: 12px 14px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+    transition: background-color 160ms ease, box-shadow 160ms ease, opacity 160ms ease;
+  }
+
+  .newapi-scope .realm-field::placeholder {
+    color: var(--semi-color-text-3);
+  }
+
+  .newapi-scope .realm-field:focus-visible {
+    box-shadow: 0 0 0 3px var(--ring);
+    background: color-mix(in hsl, var(--semi-color-fill-1) 68%, white);
+  }
+
+  .newapi-scope textarea.realm-field {
+    line-height: 1.6;
+    resize: none;
+  }
+
+  /* Semi 组件常通过 Portal 挂到 body 下（不在 newapi-scope 内）——这里也要同主题 */
+  .semi-portal,
+  .semi-portal * {
+    font-family: inherit;
+  }
+
+  .semi-portal .semi-icon,
+  .semi-portal .lucide {
+    color: var(--semi-color-text-2);
+    opacity: 0.9;
+  }
+
+  .semi-portal a .semi-icon,
+  .semi-portal button .semi-icon,
+  .semi-portal a .lucide,
+  .semi-portal button .lucide {
+    color: currentColor;
+    opacity: 1;
+  }
+
+  /* ==================== Semi UI (global) ==================== */
+  /* Some pages render Semi components outside .newapi-scope. Keep them on Mist Sage. */
+  .semi-button,
+  .semi-input,
+  .semi-select,
+  .semi-select-selection,
+  .semi-tag,
+  .semi-typography {
+    font-family: inherit !important;
+  }
+
+  .semi-input-prefix-icon .semi-icon,
+  .semi-input-suffix-icon .semi-icon {
+    color: var(--semi-color-text-3);
+    opacity: 0.95;
+  }
+
+  .semi-card {
+    border: 0 !important;
+    background: var(--semi-color-bg-1) !important;
+    border-radius: var(--radius-lg) !important;
+    box-shadow: var(--shadow-soft-2);
+  }
+
+  .semi-modal-content,
+  .semi-modal-header {
+    background: var(--semi-color-bg-1) !important;
+  }
+
+  .semi-button {
+    border-radius: var(--radius-md) !important;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    transition: opacity 150ms ease, box-shadow 150ms ease !important;
+  }
+
+  .semi-button:not(.semi-button-borderless):not(.semi-button-outline) {
+    border: 0 !important;
+    box-shadow: var(--shadow-soft-2);
+  }
+
+  .semi-button:focus-visible {
+    outline: none !important;
+    box-shadow: 0 0 0 3px var(--ring) !important;
+  }
+
+  .semi-button:not(.semi-button-borderless):not(.semi-button-outline):focus-visible {
+    box-shadow: 0 0 0 3px var(--ring), var(--shadow-soft-2) !important;
+  }
+
+  .semi-button:hover {
+    opacity: 0.92;
+  }
+
+  .semi-button:active {
+    opacity: 0.88;
+  }
+
+  .semi-button.semi-button-outline:hover,
+  .semi-button.semi-button-outline:active {
+    background: transparent !important;
+  }
+
+  .semi-button.semi-button-borderless,
+  .semi-button.semi-button-borderless:hover,
+  .semi-button.semi-button-borderless:active {
+    background: transparent !important;
+    border: 0 !important;
+    box-shadow: none !important;
+  }
+
+  .semi-button-primary.semi-button-solid {
+    background: var(--semi-color-primary) !important;
+    color: var(--semi-color-white) !important;
+  }
+
+  .semi-button-primary.semi-button-solid:hover,
+  .semi-button-primary.semi-button-solid:active {
+    background: var(--semi-color-primary) !important;
+  }
+
+  .semi-button-primary.semi-button-light,
+  .semi-button-primary.semi-button-light:hover,
+  .semi-button-primary.semi-button-light:active {
+    border: 0 !important;
+    background: var(--semi-color-primary-light-default) !important;
+    color: var(--semi-color-primary) !important;
+    box-shadow: var(--shadow-soft-2);
+  }
+
+  .semi-button-primary.semi-button-outline,
+  .semi-button-primary.semi-button-outline:hover,
+  .semi-button-primary.semi-button-outline:active {
+    border: 1px solid color-mix(in hsl, var(--semi-color-primary) 18%, var(--semi-color-border)) !important;
+    background: transparent !important;
+    color: var(--semi-color-primary) !important;
+    box-shadow: none !important;
+  }
+
+  .semi-button-primary.semi-button-borderless {
+    border: 0 !important;
+    background: transparent !important;
+    color: var(--semi-color-primary) !important;
+    box-shadow: none !important;
+  }
+
+  .semi-button-secondary,
+  .semi-button-tertiary,
+  .semi-button-secondary:hover,
+  .semi-button-tertiary:hover,
+  .semi-button-secondary:active,
+  .semi-button-tertiary:active,
+  .semi-button-secondary.semi-button-light,
+  .semi-button-tertiary.semi-button-light {
+    border: 0 !important;
+    background: var(--semi-color-fill-0) !important;
+    color: var(--semi-color-text-0) !important;
+    box-shadow: var(--shadow-soft-2);
+  }
+
+  .semi-button-tertiary.semi-button-solid {
+    background: var(--semi-color-fill-0) !important;
+    color: var(--semi-color-text-0) !important;
+  }
+
+  .semi-button-secondary.semi-button-outline,
+  .semi-button-tertiary.semi-button-outline,
+  .semi-button-secondary.semi-button-outline:hover,
+  .semi-button-tertiary.semi-button-outline:hover,
+  .semi-button-secondary.semi-button-outline:active,
+  .semi-button-tertiary.semi-button-outline:active {
+    border: 1px solid var(--semi-color-border) !important;
+    background: transparent !important;
+    color: var(--semi-color-text-0) !important;
+    box-shadow: none !important;
+  }
+
+  .semi-button-tertiary.semi-button-borderless {
+    color: var(--semi-color-text-1) !important;
+  }
+
+  .semi-button-secondary.semi-button-borderless {
+    color: var(--semi-color-text-1) !important;
+  }
+
+  .semi-button-danger.semi-button-solid:hover,
+  .semi-button-danger.semi-button-solid:active {
+    background: var(--semi-color-danger) !important;
+  }
+
+  .semi-button-warning.semi-button-solid:hover,
+  .semi-button-warning.semi-button-solid:active {
+    background: var(--semi-color-warning) !important;
+  }
+
+  .semi-button-danger.semi-button-solid {
+    border: 0 !important;
+    background: var(--semi-color-danger) !important;
+    color: var(--semi-color-white) !important;
+    box-shadow: var(--shadow-soft-2);
+  }
+
+  /* Semi UI：在 newapi-scope 内强制继承字体（Semi 默认写死 Inter，会破坏整体节奏） */
+  .newapi-scope .semi-button,
+  .newapi-scope .semi-input,
+  .newapi-scope .semi-select,
+  .newapi-scope .semi-select-selection,
+  .newapi-scope .semi-tag,
+  .newapi-scope .semi-typography {
+    font-family: inherit !important;
+  }
+
+  .newapi-scope .semi-icon,
+  .newapi-scope .lucide {
+    color: var(--semi-color-text-2);
+    opacity: 0.9;
+  }
+
+  .newapi-scope a .semi-icon,
+  .newapi-scope button .semi-icon,
+  .newapi-scope a .lucide,
+  .newapi-scope button .lucide {
+    color: currentColor;
+    opacity: 1;
+  }
+
+  .newapi-scope .semi-input-prefix-icon .semi-icon,
+  .newapi-scope .semi-input-suffix-icon .semi-icon {
+    color: var(--semi-color-text-3);
+    opacity: 0.95;
+  }
+
+  /* ==================== Semi: surfaces (borderless, subtle elevation) ==================== */
+  .newapi-scope .semi-card {
+    border: 0 !important;
+    background: var(--semi-color-bg-1) !important;
+    border-radius: var(--radius-lg) !important;
+    box-shadow: var(--shadow-soft-2);
+  }
+
+  .newapi-scope .semi-modal-content,
+  .newapi-scope .semi-modal-header {
+    background: var(--semi-color-bg-1) !important;
+  }
+
+  /* ==================== Semi: buttons ==================== */
+  .newapi-scope .semi-button {
+    border-radius: var(--radius-md) !important;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    transition: opacity 150ms ease, box-shadow 150ms ease !important;
+  }
+
+  .newapi-scope .semi-button:not(.semi-button-borderless):not(.semi-button-outline) {
+    border: 0 !important;
+    box-shadow: var(--shadow-soft-2);
+  }
+
+  /* focus：用柔和 ring 替换 Semi 默认的硬 outline */
+  .newapi-scope .semi-button:focus-visible {
+    outline: none !important;
+    box-shadow: 0 0 0 3px var(--ring) !important;
+  }
+
+  .newapi-scope .semi-button:not(.semi-button-borderless):not(.semi-button-outline):focus-visible {
+    box-shadow: 0 0 0 3px var(--ring), var(--shadow-soft-2) !important;
+  }
+
+  .newapi-scope .semi-button:hover {
+    opacity: 0.92;
+  }
+
+  .newapi-scope .semi-button:active {
+    opacity: 0.88;
+  }
+
+  /* 约束 hover/active：仅用 opacity 反馈，不做颜色跳变 */
+  .newapi-scope .semi-button.semi-button-outline:hover,
+  .newapi-scope .semi-button.semi-button-outline:active {
+    background: transparent !important;
+  }
+
+  .newapi-scope .semi-button.semi-button-borderless,
+  .newapi-scope .semi-button.semi-button-borderless:hover,
+  .newapi-scope .semi-button.semi-button-borderless:active {
+    background: transparent !important;
+    border: 0 !important;
+    box-shadow: none !important;
+  }
+
+  .newapi-scope .semi-button-primary.semi-button-solid {
+    background: var(--semi-color-primary) !important;
+    color: var(--semi-color-white) !important;
+  }
+
+  .newapi-scope .semi-button-primary.semi-button-solid:hover,
+  .newapi-scope .semi-button-primary.semi-button-solid:active {
+    background: var(--semi-color-primary) !important;
+  }
+
+  .newapi-scope .semi-button-primary.semi-button-light,
+  .newapi-scope .semi-button-primary.semi-button-light:hover,
+  .newapi-scope .semi-button-primary.semi-button-light:active {
+    border: 0 !important;
+    background: var(--semi-color-primary-light-default) !important;
+    color: var(--semi-color-primary) !important;
+    box-shadow: var(--shadow-soft-2);
+  }
+
+  .newapi-scope .semi-button-primary.semi-button-outline,
+  .newapi-scope .semi-button-primary.semi-button-outline:hover,
+  .newapi-scope .semi-button-primary.semi-button-outline:active {
+    border: 1px solid color-mix(in hsl, var(--semi-color-primary) 18%, var(--semi-color-border)) !important;
+    background: transparent !important;
+    color: var(--semi-color-primary) !important;
+    box-shadow: none !important;
+  }
+
+  .newapi-scope .semi-button-primary.semi-button-borderless {
+    border: 0 !important;
+    background: transparent !important;
+    color: var(--semi-color-primary) !important;
+    box-shadow: none !important;
+  }
+
+  /* secondary / tertiary：统一为“surface 按钮”而不是 Semi 自带的亮色 */
+  .newapi-scope .semi-button-secondary,
+  .newapi-scope .semi-button-tertiary,
+  .newapi-scope .semi-button-secondary:hover,
+  .newapi-scope .semi-button-tertiary:hover,
+  .newapi-scope .semi-button-secondary:active,
+  .newapi-scope .semi-button-tertiary:active,
+  .newapi-scope .semi-button-secondary.semi-button-light,
+  .newapi-scope .semi-button-tertiary.semi-button-light {
+    border: 0 !important;
+    background: var(--semi-color-fill-0) !important;
+    color: var(--semi-color-text-0) !important;
+    box-shadow: var(--shadow-soft-2);
+  }
+
+  .newapi-scope .semi-button-tertiary.semi-button-solid {
+    background: var(--semi-color-fill-0) !important;
+    color: var(--semi-color-text-0) !important;
+  }
+
+  .newapi-scope .semi-button-secondary.semi-button-outline,
+  .newapi-scope .semi-button-tertiary.semi-button-outline,
+  .newapi-scope .semi-button-secondary.semi-button-outline:hover,
+  .newapi-scope .semi-button-tertiary.semi-button-outline:hover,
+  .newapi-scope .semi-button-secondary.semi-button-outline:active,
+  .newapi-scope .semi-button-tertiary.semi-button-outline:active {
+    border: 1px solid var(--semi-color-border) !important;
+    background: transparent !important;
+    color: var(--semi-color-text-0) !important;
+    box-shadow: none !important;
+  }
+
+  .newapi-scope .semi-button-tertiary.semi-button-borderless {
+    color: var(--semi-color-text-1) !important;
+  }
+
+  .newapi-scope .semi-button-secondary.semi-button-borderless {
+    color: var(--semi-color-text-1) !important;
+  }
+
+  /* danger / warning：同样只用 opacity，不要 hover/active 改底色 */
+  .newapi-scope .semi-button-danger.semi-button-solid:hover,
+  .newapi-scope .semi-button-danger.semi-button-solid:active {
+    background: var(--semi-color-danger) !important;
+  }
+
+  .newapi-scope .semi-button-warning.semi-button-solid:hover,
+  .newapi-scope .semi-button-warning.semi-button-solid:active {
+    background: var(--semi-color-warning) !important;
+  }
+
+  .newapi-scope .semi-button-danger.semi-button-solid {
+    border: 0 !important;
+    background: var(--semi-color-danger) !important;
+    color: var(--semi-color-white) !important;
+    box-shadow: var(--shadow-soft-2);
+  }
+
+  /* Semi 自带 colorful（渐变/彩色）在淡雅主题里会显得突兀：直接回落到 surface */
+  .newapi-scope .semi-button-colorful:not(.semi-button-primary):not(.semi-button-danger):not(.semi-button-warning),
+  .newapi-scope .semi-button-colorful:not(.semi-button-primary):not(.semi-button-danger):not(.semi-button-warning):hover,
+  .newapi-scope .semi-button-colorful:not(.semi-button-primary):not(.semi-button-danger):not(.semi-button-warning):active {
+    background: var(--semi-color-fill-0) !important;
+  }
+
+  .newapi-scope .semi-button-colorful:not(.semi-button-primary):not(.semi-button-danger):not(.semi-button-warning) .semi-button-content-right,
+  .newapi-scope .semi-button-colorful:not(.semi-button-primary):not(.semi-button-danger):not(.semi-button-warning) .semi-button-content {
+    background: none !important;
+    color: var(--semi-color-text-0) !important;
+    -webkit-text-fill-color: currentColor;
+  }
+
+  /* ==================== Semi: inputs ==================== */
+  .newapi-scope .semi-input-wrapper {
+    border: 0 !important;
+    background: var(--semi-color-fill-1) !important;
+    border-radius: var(--radius-md) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  }
+
+  .newapi-scope .semi-input-wrapper:hover {
+    background: color-mix(in hsl, var(--semi-color-fill-1) 78%, white) !important;
+  }
+
+  .newapi-scope .semi-input-wrapper-focus {
+    border: 0 !important;
+    box-shadow: 0 0 0 3px var(--ring) !important;
+    background: color-mix(in hsl, var(--semi-color-fill-1) 68%, white) !important;
+  }
+
+  /* ==================== Semi: selects ==================== */
+  .newapi-scope .semi-select,
+  .newapi-scope .semi-select:hover,
+  .newapi-scope .semi-select:active {
+    border: 0 !important;
+    background: var(--semi-color-fill-1) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+    transition: opacity 150ms ease, box-shadow 150ms ease, background-color 150ms ease !important;
+  }
+
+  .newapi-scope .semi-select-open,
+  .newapi-scope .semi-select-focus {
+    border: 0 !important;
+    box-shadow: 0 0 0 3px var(--ring) !important;
+    background: color-mix(in hsl, var(--semi-color-fill-1) 68%, white) !important;
+  }
+
+  .newapi-scope .semi-select-dropdown {
+    border: 0 !important;
+    background: var(--semi-color-bg-1) !important;
+    border-radius: var(--radius-lg) !important;
+    box-shadow: var(--shadow-soft);
+  }
+
+  /* ==================== Semi: tags（颜色统一到 Mist Sage 的低饱和体系） ==================== */
+  .newapi-scope .semi-tag {
+    border: 0 !important;
+    box-shadow: none !important;
+    background: var(--semi-color-fill-0) !important;
+    color: var(--semi-color-text-1) !important;
+  }
+
+  .newapi-scope .semi-tag-blue-light,
+  .newapi-scope .semi-tag-blue-ghost {
+    background: var(--semi-color-primary-light-default) !important;
+    color: var(--semi-color-primary) !important;
+  }
+
+  .newapi-scope .semi-tag-blue-solid {
+    background: var(--semi-color-primary) !important;
+    color: var(--semi-color-white) !important;
+  }
+
+  .newapi-scope .semi-tag-green-light,
+  .newapi-scope .semi-tag-green-ghost {
+    background: var(--semi-color-success-light-default) !important;
+    color: var(--semi-color-success) !important;
+  }
+
+  .newapi-scope .semi-tag-green-solid {
+    background: var(--semi-color-success) !important;
+    color: var(--semi-color-white) !important;
+  }
+
+  .newapi-scope .semi-tag-red-light,
+  .newapi-scope .semi-tag-red-ghost {
+    background: var(--semi-color-danger-light-default) !important;
+    color: var(--semi-color-danger) !important;
+  }
+
+  .newapi-scope .semi-tag-red-solid {
+    background: var(--semi-color-danger) !important;
+    color: var(--semi-color-white) !important;
+  }
+
+  .newapi-scope .semi-tag-yellow-light,
+  .newapi-scope .semi-tag-yellow-ghost,
+  .newapi-scope .semi-tag-orange-light,
+  .newapi-scope .semi-tag-orange-ghost {
+    background: var(--semi-color-warning-light-default) !important;
+    color: var(--semi-color-warning) !important;
+  }
+
+  .newapi-scope .semi-tag-yellow-solid,
+  .newapi-scope .semi-tag-orange-solid {
+    background: var(--semi-color-warning) !important;
+    color: var(--semi-color-white) !important;
+  }
+
+  .newapi-scope .semi-tag-white-light,
+  .newapi-scope .semi-tag-white-ghost,
+  .newapi-scope .semi-tag-white-solid {
+    background: var(--semi-color-bg-1) !important;
+    color: var(--semi-color-text-1) !important;
+  }
+
+  /* ==================== Semi: tables ==================== */
+  .newapi-scope .semi-table,
+  .newapi-scope .semi-table-container {
+    background: transparent !important;
+  }
+
+  .newapi-scope .semi-table-thead {
+    background: color-mix(in hsl, var(--semi-color-bg-1) 70%, white) !important;
+  }
+
+  /* ==================== Tailwind buttons/links cleanup ==================== */
+  .newapi-scope button.border:not(.border-dashed),
+  .newapi-scope a.border:not(.border-dashed) {
+    border-color: transparent !important;
+  }
+}
+
+/* new-api Tailwind 仅保留 semi tokens；将 realmoi 里常用的默认色板类在作用域内映射到 Semi */
+.newapi-scope .text-indigo-700,
+.newapi-scope .text-indigo-600,
+.newapi-scope .text-indigo-500,
+.newapi-scope .text-indigo-400 {
+  color: var(--semi-color-primary) !important;
+}
+
+.newapi-scope .bg-indigo-600,
+.newapi-scope .bg-indigo-500 {
+  background-color: var(--semi-color-primary) !important;
+}
+
+.newapi-scope .bg-indigo-50,
+.newapi-scope .bg-indigo-50\/90,
+.newapi-scope .bg-indigo-50\/80,
+.newapi-scope .bg-indigo-50\/70,
+.newapi-scope .bg-indigo-50\/55,
+.newapi-scope .bg-indigo-50\/40 {
+  /* 淡雅：减少彩色底，改为中性容器压差 */
+  background-color: var(--semi-color-bg-1) !important;
+}
+
+.newapi-scope .bg-indigo-100 {
+  background-color: var(--semi-color-fill-0) !important;
+}
+
+.newapi-scope .bg-indigo-200\/20,
+.newapi-scope .bg-indigo-500\/10,
+.newapi-scope .bg-indigo-500\/20,
+.newapi-scope .bg-indigo-500\/70 {
+  background-color: var(--semi-color-primary-light-default) !important;
+}
+
+.newapi-scope .bg-indigo-500\/70 {
+  /* 透明度较高的场景（进度条/色块）仍保留“落墨位” */
+  background-color: color-mix(in hsl, var(--semi-color-primary) 72%, transparent) !important;
+}
+
+.newapi-scope .border-indigo-500 {
+  border-color: var(--semi-color-primary) !important;
+}
+
+.newapi-scope .border-indigo-200,
+.newapi-scope .border-indigo-100\/70,
+.newapi-scope .border-indigo-400\/60 {
+  border-color: var(--semi-color-primary-light-default) !important;
+}
+
+.newapi-scope .text-emerald-700,
+.newapi-scope .text-emerald-400 {
+  color: var(--semi-color-success) !important;
+}
+
+.newapi-scope .bg-emerald-500,
+.newapi-scope .bg-emerald-500\/90 {
+  background-color: var(--semi-color-success) !important;
+}
+
+.newapi-scope .bg-emerald-50,
+.newapi-scope .bg-emerald-50\/80,
+.newapi-scope .bg-emerald-50\/70,
+.newapi-scope .bg-emerald-50\/50 {
+  background-color: var(--semi-color-success-light-default) !important;
+}
+
+.newapi-scope .bg-emerald-100 {
+  background-color: var(--semi-color-success-light-hover) !important;
+}
+
+.newapi-scope .border-emerald-400,
+.newapi-scope .border-emerald-200,
+.newapi-scope .border-emerald-200\/60 {
+  border-color: var(--semi-color-success-light-default) !important;
+}
+
+.newapi-scope .text-rose-700,
+.newapi-scope .text-rose-600,
+.newapi-scope .text-rose-400 {
+  color: var(--semi-color-danger) !important;
+}
+
+.newapi-scope .bg-rose-500 {
+  background-color: var(--semi-color-danger) !important;
+}
+
+.newapi-scope .bg-rose-50,
+.newapi-scope .bg-rose-50\/80,
+.newapi-scope .bg-rose-50\/75,
+.newapi-scope .bg-rose-50\/70,
+.newapi-scope .bg-rose-50\/55 {
+  background-color: var(--semi-color-danger-light-default) !important;
+}
+
+.newapi-scope .bg-rose-100 {
+  background-color: var(--semi-color-danger-light-hover) !important;
+}
+
+.newapi-scope .border-rose-400,
+.newapi-scope .border-rose-200,
+.newapi-scope .border-rose-200\/60 {
+  border-color: var(--semi-color-danger-light-default) !important;
+}
+
+.newapi-scope .text-amber-800,
+.newapi-scope .text-amber-700,
+.newapi-scope .text-amber-600,
+.newapi-scope .text-amber-500 {
+  color: var(--semi-color-warning) !important;
+}
+
+.newapi-scope .bg-amber-500 {
+  background-color: var(--semi-color-warning) !important;
+}
+
+.newapi-scope .bg-amber-50,
+.newapi-scope .bg-amber-50\/80,
+.newapi-scope .bg-amber-50\/75,
+.newapi-scope .bg-amber-50\/55 {
+  background-color: var(--semi-color-warning-light-default) !important;
+}
+
+.newapi-scope .border-amber-200,
+.newapi-scope .border-amber-200\/60 {
+  border-color: var(--semi-color-warning-light-default) !important;
+}
+
+.newapi-scope .text-blue-600 {
+  color: var(--semi-color-link) !important;
+}
+
+.newapi-scope .text-blue-500 {
+  color: var(--semi-color-link) !important;
+}
+
+.newapi-scope .hover\:text-blue-800:hover {
+  color: var(--semi-color-link-hover) !important;
+}
+
+.newapi-scope .hover\:text-indigo-600:hover {
+  color: var(--semi-color-primary) !important;
+}
+
+.newapi-scope .hover\:text-rose-600:hover {
+  color: var(--semi-color-danger) !important;
+}
+
+.newapi-scope .hover\:bg-indigo-600:hover,
+.newapi-scope .hover\:bg-indigo-500:hover {
+  background-color: var(--semi-color-primary-hover) !important;
+}
+
+.newapi-scope .hover\:bg-indigo-100:hover {
+  background-color: var(--semi-color-primary-light-hover) !important;
+}
+
+.newapi-scope .hover\:bg-rose-100:hover {
+  background-color: var(--semi-color-danger-light-hover) !important;
+}
+
+.newapi-scope .hover\:bg-emerald-100:hover {
+  background-color: var(--semi-color-success-light-hover) !important;
+}
+
+.newapi-scope .group:hover .group-hover\:text-indigo-600 {
+  color: var(--semi-color-primary) !important;
+}
+
+.newapi-scope .group:hover .group-hover\:bg-indigo-600 {
+  background-color: var(--semi-color-primary-hover) !important;
+}
+
+.newapi-scope .text-red-600 {
+  color: var(--semi-color-danger) !important;
+}
+
+.newapi-scope .hover\:text-red-500:hover {
+  color: var(--semi-color-danger-hover) !important;
+}
+
+.newapi-scope .text-gray-800,
+.newapi-scope .\!text-gray-800 {
+  color: var(--semi-color-text-0) !important;
+}
+
+.newapi-scope .dark\:text-gray-200 {
+  color: var(--semi-color-text-0) !important;
+}
+
+.newapi-scope .ring-indigo-500\/25 {
+  --tw-ring-color: color-mix(in hsl, var(--semi-color-primary) 28%, transparent) !important;
+}
+
+.newapi-scope .ring-emerald-400\/25 {
+  --tw-ring-color: rgba(var(--semi-green-0), 0.25) !important;
+}
+
+.newapi-scope .ring-rose-400\/25 {
+  --tw-ring-color: rgba(var(--semi-red-0), 0.25) !important;
+}
+
+.newapi-scope .shadow-indigo-600\/20,
+.newapi-scope .shadow-indigo-600\/10,
+.newapi-scope .shadow-indigo-500 {
+  --tw-shadow-color: color-mix(in hsl, var(--semi-color-primary) 22%, transparent) !important;
+}
+
+.newapi-scope .shadow-emerald-500 {
+  --tw-shadow-color: rgba(var(--semi-green-0), 0.18) !important;
+}
+
+.newapi-scope .shadow-rose-500 {
+  --tw-shadow-color: rgba(var(--semi-red-0), 0.18) !important;
+}
+
+.newapi-scope .shadow-amber-500 {
+  --tw-shadow-color: rgba(var(--semi-orange-0), 0.18) !important;
+}
+
+.newapi-scope .text-slate-950,
+.newapi-scope .text-slate-900,
+.newapi-scope .text-slate-800 {
+  color: var(--semi-color-text-0) !important;
+}
+
+.newapi-scope .text-slate-700,
+.newapi-scope .text-slate-600 {
+  color: var(--semi-color-text-1) !important;
+}
+
+.newapi-scope .text-slate-500 {
+  color: var(--semi-color-text-2) !important;
+}
+
+.newapi-scope .text-slate-400,
+.newapi-scope .text-slate-300 {
+  color: var(--semi-color-text-3) !important;
+}
+
+.newapi-scope .bg-white,
+.newapi-scope .bg-white\/95,
+.newapi-scope .bg-white\/92,
+.newapi-scope .bg-white\/90,
+.newapi-scope .bg-white\/86,
+.newapi-scope .bg-white\/84,
+.newapi-scope .bg-white\/80,
+.newapi-scope .bg-white\/70,
+.newapi-scope .bg-white\/65,
+.newapi-scope .bg-white\/60,
+.newapi-scope .bg-white\/58,
+.newapi-scope .bg-white\/55,
+.newapi-scope .bg-white\/50 {
+  background-color: var(--semi-color-bg-0) !important;
+}
+
+.newapi-scope .bg-slate-50,
+.newapi-scope .bg-slate-50\/80,
+.newapi-scope .bg-slate-50\/70,
+.newapi-scope .bg-slate-50\/60 {
+  background-color: var(--semi-color-bg-1) !important;
+}
+
+.newapi-scope .bg-slate-100,
+.newapi-scope .bg-slate-100\/80,
+.newapi-scope .bg-slate-900\/5 {
+  background-color: var(--semi-color-fill-0) !important;
+}
+
+.newapi-scope .bg-slate-200,
+.newapi-scope .bg-slate-200\/80 {
+  background-color: var(--semi-color-fill-1) !important;
+}
+
+.newapi-scope .bg-slate-900\/55 {
+  background-color: var(--semi-color-overlay-bg) !important;
+}
+
+.newapi-scope .border-slate-200,
+.newapi-scope .border-slate-200\/90,
+.newapi-scope .border-slate-200\/80,
+.newapi-scope .border-slate-200\/75,
+.newapi-scope .border-slate-200\/70,
+.newapi-scope .border-slate-100,
+.newapi-scope .border-slate-100\/50,
+.newapi-scope .border-white\/70,
+.newapi-scope .border-white\/60 {
+  border-color: var(--semi-color-border) !important;
+}
+
+.newapi-scope .placeholder\:text-slate-400::placeholder {
+  color: var(--semi-color-text-3) !important;
+}
+
+.newapi-scope .glass-chip {
+  border-color: var(--semi-color-border);
+  background: var(--semi-color-fill-0);
+  color: var(--semi-color-text-1);
+}
+
+.newapi-scope.bg-gray-100 {
+  /* new-api 的 Tailwind config 不含 gray，bg-gray-100 实际无效（表现为透明） */
+  background-color: rgba(0, 0, 0, 0) !important;
+}
+
+/* semi-ui 组件自定义样式（对齐 new-api，作用域 .newapi-scope） */
+@layer base {
+  .newapi-scope .semi-button.\!rounded-full,
+  .newapi-scope .semi-button.rounded-full {
+    border-radius: 9999px !important;
+  }
+}
+
+.newapi-scope .semi-card-header,
+.newapi-scope .semi-card-body,
+.newapi-scope .semi-modal-content {
+  padding: 14px !important;
+}
+
+.newapi-scope .semi-radio,
+.newapi-scope .semi-tagInput,
+.newapi-scope .semi-input-textarea-wrapper,
+.newapi-scope .semi-navigation-sub-title,
+.newapi-scope .semi-chat-inputBox-sendButton,
+.newapi-scope .semi-page-item,
+.newapi-scope .semi-navigation-item,
+.newapi-scope .semi-tag-closable,
+.newapi-scope .semi-input-wrapper,
+.newapi-scope .semi-tabs-tab-button,
+.newapi-scope .semi-select,
+.newapi-scope .semi-button,
+.newapi-scope .semi-datepicker-range-input {
+  border-radius: var(--radius-md) !important;
+}
+
+/* Semi Input 在 Next 渲染下会出现 identity transform，导致与 new-api 字形抗锯齿有细微差异 */
+.newapi-scope .semi-input {
+  transform: none !important;
+}
+
+/* new-api Pricing：对齐 Semi Form.TextArea 的最小高度 */
+.newapi-scope textarea#ModelPrice,
+.newapi-scope textarea#GroupRatio {
+  height: 130px !important;
+  min-height: 130px !important;
+}
+
+.newapi-pricing .newapi-pricing-switch {
+  width: 671px;
+  max-width: 100%;
+}
+
+.newapi-pricing .newapi-pricing-textarea {
+  width: 669px;
+  max-width: 100%;
+}
+
+/* 用于在 Tailwind v4 下稳定模拟 new-api(Tailwind v3) 的 space-y 行为（不影响全局） */
+.newapi-space-y-2 > :not([hidden]) ~ :not([hidden]) {
+  margin-top: 0.5rem !important;
+}
+
+.newapi-space-y-3 > :not([hidden]) ~ :not([hidden]) {
+  margin-top: 0.75rem !important;
+}
+
+.newapi-scope .glass-panel,
+.newapi-scope .glass-panel-strong {
+  border-radius: 16px;
+  border: 0;
+  background: var(--semi-color-bg-1);
+  box-shadow: var(--shadow-soft-2);
+}
+
+.newapi-scope .glass-panel-strong {
+  background: var(--semi-color-bg-1);
+  box-shadow: var(--shadow-soft);
+}
+
+.newapi-scope .glass-input {
+  border-radius: 10px;
+  border: 0;
+  background: var(--semi-color-fill-1);
+  color: var(--semi-color-text-0);
+  box-shadow: none;
+  transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
+}
+
+.newapi-scope input.glass-input,
+.newapi-scope select.glass-input {
+  height: 32px;
+  padding: 0 12px;
+  line-height: 32px;
+}
+
+.newapi-scope textarea.glass-input {
+  padding: 8px 12px;
+  line-height: 1.5;
+}
+
+.newapi-scope .glass-input::placeholder {
+  color: var(--semi-color-text-2);
+}
+
+.newapi-scope .glass-input:focus-visible {
+  box-shadow: 0 0 0 3px var(--ring);
+  background: color-mix(in hsl, var(--semi-color-fill-1) 68%, white);
+}
+
+.newapi-scope .glass-btn {
+  border-radius: 10px;
+  height: 32px;
+  padding: 0 12px;
+  color: var(--semi-color-white);
+  background: var(--semi-color-primary);
+  box-shadow: var(--shadow-soft-2);
+  transform: none;
+  transition: background-color 150ms ease, box-shadow 150ms ease, opacity 150ms ease;
+}
+
+.newapi-scope .glass-btn:hover {
+  background: var(--semi-color-primary-hover);
+  opacity: 0.92;
+}
+
+.newapi-scope .glass-btn:active {
+  background: var(--semi-color-primary-active);
+  opacity: 0.88;
+}
+
+.newapi-scope .glass-btn-secondary {
+  color: var(--semi-color-text-0);
+  background: var(--semi-color-bg-1);
+  border-color: transparent;
+  box-shadow: var(--shadow-soft-2);
+}
+
+.newapi-scope .glass-btn-secondary:hover {
+  background: var(--semi-color-fill-1);
+}
+
+.newapi-scope .glass-btn-danger {
+  color: var(--semi-color-white);
+  background: var(--semi-color-danger);
+  box-shadow: var(--shadow-soft-2);
+}
+
+.newapi-scope .glass-btn-danger:hover {
+  background: var(--semi-color-danger-hover);
+}
+
+.newapi-scope .glass-alert {
+  border-radius: 10px;
+  padding: 0.75rem 0.875rem;
+  border: 1px solid;
+  font-size: 0.875rem;
+}
+
+.newapi-scope .glass-alert-error {
+  color: var(--semi-color-danger);
+  border-color: var(--semi-color-danger-light-default);
+  background: var(--semi-color-danger-light-default);
+}
+
+.newapi-scope .glass-alert-success {
+  color: var(--semi-color-success);
+  border-color: var(--semi-color-success-light-default);
+  background: var(--semi-color-success-light-default);
+}
+
+.newapi-scope .glass-code {
+  border-radius: 16px;
+  border: 1px solid var(--semi-color-border);
+  background: var(--semi-color-fill-0);
+  color: var(--semi-color-text-0);
+}
+
+.newapi-scope .glass-table {
+  border-radius: 16px;
+  border: 1px solid var(--semi-color-border);
+  background: var(--semi-color-bg-0);
+}
+
+.newapi-scope .glass-table thead {
+  background: var(--semi-color-bg-0);
+}
+
+.newapi-scope .glass-table tbody tr {
+  border-top: 1px solid var(--semi-color-border);
+}
+
+.newapi-scope .glass-table tbody tr:hover {
+  background: var(--semi-color-fill-0);
+}
+
+
+/* new-api 表格卡片滚动设置（作用域 .newapi-scope） */
+.newapi-scope .table-scroll-card {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 110px);
+  max-height: calc(100vh - 110px);
+}
+
+.newapi-scope .table-scroll-card .semi-card-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+}
+
+.newapi-scope .table-scroll-card .semi-card-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.newapi-scope .table-scroll-card .semi-card-body::-webkit-scrollbar-thumb {
+  background: rgba(var(--semi-grey-2), 0.3);
+  border-radius: 2px;
+}
+
+.newapi-scope .table-scroll-card .semi-card-body::-webkit-scrollbar-thumb:hover {
+  background: rgba(var(--semi-grey-2), 0.5);
+}
+
+.newapi-scope .table-scroll-card .semi-card-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@media (max-width: 767px) {
+  .newapi-scope .table-scroll-card {
+    height: calc(100vh - 77px);
+    max-height: calc(100vh - 77px);
+  }
 }
 
 .terminal-surface {
   height: 100%;
   width: 100%;
   border-radius: 12px;
-  border: 1px solid rgba(30, 41, 59, 0.45);
-  background: linear-gradient(180deg, #0f172a 0%, #0b1220 100%);
-  box-shadow: inset 0 1px 0 rgba(148, 163, 184, 0.2), 0 10px 24px rgba(15, 23, 42, 0.28);
+  border: 0;
+  background: #0b0f0d;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 10px 24px rgba(9, 15, 12, 0.22);
   overflow: hidden;
 }
 
@@ -259,4 +1532,68 @@ body {
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: rgba(71, 85, 105, 0.4);
+}
+
+/* ==================== Global “indigo/blue -> Mist Sage” remap ====================
+   解决：仍有部分节点/portal 不在 .newapi-scope 下，导致图标残留蓝色。 */
+.text-indigo-700,
+.text-indigo-600,
+.text-indigo-500,
+.text-indigo-400,
+.text-blue-600,
+.text-blue-500 {
+  color: var(--semi-color-primary) !important;
+}
+
+.bg-indigo-600,
+.bg-indigo-500 {
+  background-color: var(--semi-color-primary) !important;
+}
+
+.bg-indigo-50,
+.bg-indigo-50\/90,
+.bg-indigo-50\/80,
+.bg-indigo-50\/70,
+.bg-indigo-50\/55,
+.bg-indigo-50\/40,
+.bg-indigo-100 {
+  background-color: var(--semi-color-bg-1) !important;
+}
+
+.bg-indigo-500\/10,
+.bg-indigo-500\/20,
+.bg-indigo-200\/20 {
+  background-color: var(--semi-color-primary-light-default) !important;
+}
+
+.bg-indigo-500\/70 {
+  background-color: color-mix(in hsl, var(--semi-color-primary) 72%, transparent) !important;
+}
+
+.border-indigo-500,
+.border-indigo-200,
+.border-indigo-100\/70,
+.border-indigo-400\/60 {
+  border-color: var(--semi-color-border) !important;
+}
+
+.hover\:text-indigo-600:hover,
+.group:hover .group-hover\:text-indigo-600 {
+  color: var(--semi-color-primary) !important;
+}
+
+.hover\:bg-indigo-600:hover,
+.hover\:bg-indigo-500:hover,
+.group:hover .group-hover\:bg-indigo-600 {
+  background-color: var(--semi-color-primary-hover) !important;
+}
+
+.ring-indigo-500\/25 {
+  --tw-ring-color: color-mix(in hsl, var(--semi-color-primary) 24%, transparent) !important;
+}
+
+.shadow-indigo-600\/20,
+.shadow-indigo-600\/10,
+.shadow-indigo-500 {
+  --tw-shadow-color: color-mix(in hsl, var(--semi-color-primary) 20%, transparent) !important;
 }

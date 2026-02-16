@@ -106,8 +106,7 @@ export function LiquidInput({
     <div
       className={[
         "relative mx-auto transition-all duration-700 ease-[cubic-bezier(0.23,1,0.32,1)]",
-        "bg-white/84 border border-slate-200/80 backdrop-blur-xl rounded-3xl",
-        "shadow-[0_12px_30px_rgba(15,23,42,0.09)]",
+        "glass-panel-strong rounded-3xl",
         isExpanded ? "w-full h-[78vh] md:h-[620px] p-4 md:p-6" : "w-[92vw] max-w-[560px] h-[64px] p-2",
         "flex flex-col",
       ].join(" ")}
@@ -130,14 +129,14 @@ export function LiquidInput({
           </div>
         ) : (
           <>
-            <div className="flex items-center gap-1 mb-4 md:mb-5 bg-slate-100/80 p-1 rounded-xl self-center border border-slate-200">
+            <div className="flex items-center gap-1 mb-4 md:mb-5 bg-slate-50/80 p-1 rounded-2xl self-center">
               {(["prompt", "code", "data", "settings"] as const).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
                   className={[
                     "px-4 md:px-5 py-2 rounded-lg text-sm font-medium transition-all duration-200",
-                    activeTab === tab ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700",
+                    activeTab === tab ? "bg-slate-200/80 text-slate-900" : "text-slate-500 hover:text-slate-700",
                   ].join(" ")}
                 >
                   {tab === "prompt" ? "题面" : tab === "code" ? "源码" : tab === "data" ? "数据" : "参数"}
@@ -150,7 +149,7 @@ export function LiquidInput({
                 {activeTab === "prompt" ? (
                   <textarea
                     autoFocus
-                    className="flex-1 w-full bg-white border border-slate-200 outline-none text-slate-800 resize-none leading-relaxed placeholder:text-slate-400 text-sm md:text-base p-4 md:p-5 rounded-2xl shadow-sm transition-colors"
+                    className="realm-field flex-1 w-full text-sm md:text-base p-4 md:p-5"
                     placeholder="粘贴题面内容或描述逻辑..."
                     value={text}
                     onChange={(e) => setText(e.target.value)}
@@ -159,7 +158,7 @@ export function LiquidInput({
 
                 {activeTab === "code" ? (
                   <textarea
-                    className="flex-1 w-full bg-slate-900/[0.03] border border-slate-200 outline-none text-slate-700 resize-none font-mono text-xs md:text-sm leading-relaxed placeholder:text-slate-400 p-4 md:p-5 rounded-2xl shadow-inner"
+                    className="realm-field flex-1 w-full font-mono text-xs md:text-sm p-4 md:p-5"
                     placeholder="// 在此粘贴 C++ 代码..."
                     value={code}
                     onChange={(e) => setCode(e.target.value)}
@@ -172,9 +171,9 @@ export function LiquidInput({
                       {testCases.map((tc, index) => (
                         <div
                           key={index}
-                          className="group relative flex flex-col md:flex-row overflow-hidden rounded-2xl border border-slate-200 bg-white/80 shadow-sm transition-all"
+                          className="group relative flex flex-col md:flex-row overflow-hidden rounded-2xl glass-panel transition-opacity"
                         >
-                          <div className="flex-1 p-4 md:p-5 flex flex-col gap-2 border-b md:border-b-0 md:border-r border-slate-200">
+                          <div className="flex-1 p-4 md:p-5 flex flex-col gap-2">
                             <span className="text-xs font-semibold text-slate-500">
                               Input #{index + 1}
                             </span>
@@ -185,8 +184,8 @@ export function LiquidInput({
                               placeholder="输入..."
                             />
                           </div>
-                          <div className="flex-1 p-4 md:p-5 flex flex-col gap-2 bg-indigo-50/40">
-                            <span className="text-xs font-semibold text-indigo-500">
+                          <div className="flex-1 p-4 md:p-5 flex flex-col gap-2 bg-slate-50/60">
+                            <span className="text-xs font-semibold text-slate-500">
                               Expected
                             </span>
                             <textarea
@@ -199,7 +198,7 @@ export function LiquidInput({
                           {testCases.length > 1 ? (
                             <button
                               onClick={() => removeTestCase(index)}
-                              className="icon-wrap absolute top-3 right-3 w-7 h-7 bg-white/90 shadow rounded-full text-slate-300 hover:text-red-500 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all"
+                              className="icon-wrap absolute top-3 right-3 w-7 h-7 bg-slate-50/80 shadow-sm rounded-full text-slate-400 hover:text-red-500 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity"
                               aria-label="删除样例"
                             >
                               <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.6}>
@@ -218,7 +217,7 @@ export function LiquidInput({
 
                 {activeTab === "settings" ? (
                   <div className="w-full space-y-4 pb-2 animate-in fade-in zoom-in-95 duration-500">
-                    <div className="rounded-2xl border border-slate-200 bg-white/80 p-4 md:p-5 shadow-sm">
+                    <div className="glass-panel p-4 md:p-5">
                       <div className="text-sm font-semibold text-slate-600 mb-3">
                         后端参数
                       </div>
@@ -229,7 +228,7 @@ export function LiquidInput({
                             Model
                           </div>
                           <select
-                            className="w-full rounded-xl bg-white border border-slate-200 px-3 py-2 text-sm text-slate-700 outline-none"
+                            className="realm-field text-sm px-3 py-2"
                             value={resolvedChoice?.value || ""}
                             onChange={(e) => setModelValue(e.target.value)}
                           >
@@ -251,7 +250,7 @@ export function LiquidInput({
                             思考量
                           </div>
                           <select
-                            className="w-full rounded-xl bg-white border border-slate-200 px-3 py-2 text-sm text-slate-700 outline-none"
+                            className="realm-field text-sm px-3 py-2"
                             value={reasoningEffort}
                             onChange={(e) => setReasoningEffort(e.target.value as "low" | "medium" | "high" | "xhigh")}
                           >
@@ -273,7 +272,7 @@ export function LiquidInput({
                           <input
                             type="number"
                             inputMode="numeric"
-                            className="w-full rounded-xl bg-white border border-slate-200 px-3 py-2 text-sm text-slate-700 outline-none"
+                            className="realm-field text-sm px-3 py-2"
                             value={timeLimitMs}
                             onChange={(e) => setTimeLimitMs(e.target.value)}
                           />
@@ -286,7 +285,7 @@ export function LiquidInput({
                           <input
                             type="number"
                             inputMode="numeric"
-                            className="w-full rounded-xl bg-white border border-slate-200 px-3 py-2 text-sm text-slate-700 outline-none"
+                            className="realm-field text-sm px-3 py-2"
                             value={memoryLimitMb}
                             onChange={(e) => setMemoryLimitMb(e.target.value)}
                           />
@@ -299,7 +298,11 @@ export function LiquidInput({
             </div>
 
             <div className="flex items-center justify-between mt-4 md:mt-6 pt-4 md:pt-5 border-t border-slate-100/50 shrink-0">
-              <button onClick={() => fileInputRef.current?.click()} className="icon-wrap w-10 h-10 md:w-11 md:h-11 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 hover:text-indigo-600 transition-all text-slate-500 shadow-sm" title={activeTab === "code" ? "导入代码" : "导入文本"}>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="icon-wrap w-10 h-10 md:w-11 md:h-11 rounded-xl bg-slate-50/80 hover:opacity-90 transition-opacity text-slate-600 shadow-sm"
+                title={activeTab === "code" ? "导入代码" : "导入文本"}
+              >
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path
                     strokeLinecap="round"
@@ -336,7 +339,7 @@ export function LiquidInput({
                 <button
                   onClick={handleSend}
                   disabled={!text.trim() || !resolvedChoice}
-                  className="px-6 md:px-8 py-2.5 md:py-3 rounded-xl bg-indigo-600 text-white text-sm font-medium shadow-md shadow-indigo-600/20 hover:bg-indigo-500 transition-all disabled:opacity-20"
+                  className="glass-btn px-6 md:px-8 py-2.5 md:py-3 rounded-xl text-sm font-medium disabled:opacity-20"
                 >
                   开始调试
                 </button>

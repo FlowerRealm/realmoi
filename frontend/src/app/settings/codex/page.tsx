@@ -3,7 +3,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { AppHeader } from "@/components/AppHeader";
 import { RequireAuth } from "@/components/RequireAuth";
-import { FluidBackground } from "@/components/assistant/FluidBackground";
 import { apiFetch, getErrorMessage } from "@/lib/api";
 
 type CodexSettingsResponse = {
@@ -69,10 +68,9 @@ export default function CodexSettingsPage() {
 
   return (
     <RequireAuth>
-      <div className="relative w-screen min-h-[100dvh] box-border pt-14 overflow-hidden text-slate-800 selection:bg-indigo-500/20">
-        <FluidBackground />
+      <div className="relative w-screen min-h-[100dvh] box-border pt-14 overflow-hidden">
         <AppHeader mode="overlay" />
-        <main className="mx-auto max-w-6xl px-4 pt-8 pb-6 space-y-4 relative z-10">
+        <main className="newapi-scope mx-auto max-w-6xl px-6 md:px-7 pt-10 pb-10 space-y-3 relative z-10">
         <div className="glass-panel-strong p-4 md:p-5 flex flex-wrap items-center gap-3">
           <div>
             <h1 className="text-xl font-semibold text-slate-900">Codex 设置</h1>

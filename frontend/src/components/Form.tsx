@@ -4,7 +4,10 @@ import React from "react";
 
 export function Label({ children }: { children: React.ReactNode }) {
   return (
-    <div className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+    <div
+      className="text-[11px] font-black uppercase tracking-[0.14em]"
+      style={{ color: "var(--semi-color-text-2)" }}
+    >
       {children}
     </div>
   );

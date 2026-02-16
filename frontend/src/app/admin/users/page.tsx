@@ -1,11 +1,16 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Button, Form, Modal, Tag, Typography } from "@douyinfe/semi-ui";
+import { IconSearch, IconUserAdd } from "@douyinfe/semi-icons";
 import { AppHeader } from "@/components/AppHeader";
 import { RequireAdmin } from "@/components/RequireAdmin";
 import { RequireAuth } from "@/components/RequireAuth";
-import { FluidBackground } from "@/components/assistant/FluidBackground";
+import { CardPro } from "@/components/newapi/CardPro";
+import { CardTable } from "@/components/newapi/CardTable";
+import { createCardProPagination } from "@/components/newapi/createCardProPagination";
 import { apiFetch, getErrorMessage } from "@/lib/api";
+import type { ColumnProps } from "@douyinfe/semi-ui/lib/es/table/interface";
 
 type UserItem = {
   id: string;
@@ -20,25 +25,40 @@ type UsersListResponse = {
   total: number;
 };
 
-function fmt(ts?: string | null) {
-  if (!ts) return "-";
-  const d = new Date(ts);
-  if (Number.isNaN(d.getTime())) return ts;
-  return d.toLocaleString();
-}
+type SearchFormValues = {
+  searchKeyword?: string;
+  searchGroup?: string | null;
+};
+
+type SearchFormApi = {
+  getValues?: () => SearchFormValues;
+  reset?: () => void;
+};
 
 export default function AdminUsersPage() {
+  const formApiRef = useRef<SearchFormApi | null>(null);
+
   const [q, setQ] = useState("");
-  const [limit, setLimit] = useState(50);
-  const [offset, setOffset] = useState(0);
+  const [group, setGroup] = useState("");
+
+  const [activePage, setActivePage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const [data, setData] = useState<UsersListResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [errorText, setErrorText] = useState<string | null>(null);
 
+  const [showAddUser, setShowAddUser] = useState(false);
+
+  const groupOptions = useMemo(
+    () => [
+      { label: "default", value: "default" },
+      { label: "vip", value: "vip" },
+    ],
+    []
+  );
+
   const total = data?.total ?? 0;
-  const canPrev = offset > 0;
-  const canNext = offset + limit < total;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -46,8 +66,8 @@ export default function AdminUsersPage() {
     try {
       const qs = new URLSearchParams();
       if (q.trim()) qs.set("q", q.trim());
-      qs.set("limit", String(limit));
-      qs.set("offset", String(offset));
+      qs.set("limit", String(pageSize));
+      qs.set("offset", String(Math.max(0, (activePage - 1) * pageSize)));
       const d = await apiFetch<UsersListResponse>(`/admin/users?${qs.toString()}`);
       setData(d);
     } catch (e: unknown) {
@@ -57,179 +77,263 @@ export default function AdminUsersPage() {
     } finally {
       setLoading(false);
     }
-  }, [q, limit, offset]);
+  }, [activePage, pageSize, q]);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  const patchUser = async (userId: string, body: Record<string, unknown>) => {
-    try {
-      await apiFetch(`/admin/users/${userId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      await load();
-    } catch (e: unknown) {
-      const msg = getErrorMessage(e);
-      setErrorText(msg);
-    }
+  const handleQuery = () => {
+    const values = formApiRef.current?.getValues?.() || {};
+    const keyword = typeof values.searchKeyword === "string" ? values.searchKeyword : "";
+    const nextGroup = typeof values.searchGroup === "string" ? values.searchGroup : "";
+
+    setQ(keyword);
+    setGroup(nextGroup);
+    setActivePage(1);
   };
 
-  const resetPassword = async (userId: string) => {
-    const newPwd = window.prompt("输入新密码（8-72 字符）：");
-    if (!newPwd) return;
-    try {
-      await apiFetch(`/admin/users/${userId}/reset_password`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ new_password: newPwd }),
-      });
-      window.alert("已重置密码");
-    } catch (e: unknown) {
-      const msg = getErrorMessage(e);
-      setErrorText(msg);
-    }
+  const handleReset = () => {
+    formApiRef.current?.reset?.();
+    setQ("");
+    setGroup("");
+    setActivePage(1);
   };
 
   const items = useMemo(() => data?.items || [], [data?.items]);
 
+  const columns = useMemo<ColumnProps<UserItem>[]>(
+    () => [
+      {
+        title: "ID",
+        dataIndex: "id",
+        width: 120,
+      },
+      {
+        title: "用户名",
+        dataIndex: "username",
+        width: 180,
+      },
+      {
+        title: "状态",
+        dataIndex: "is_disabled",
+        width: 120,
+        render: (_: unknown, record: UserItem) => {
+          const enabled = !record.is_disabled;
+          return (
+            <Tag color={enabled ? "green" : "red"} shape="circle" size="small">
+              {enabled ? "已启用" : "已禁用"}
+            </Tag>
+          );
+        },
+      },
+      {
+        title: "剩余额度/总额度",
+        key: "quota_usage",
+        width: 220,
+        render: () => (
+          <Tag color="white" shape="circle" className="!text-xs">
+            0 / 0
+          </Tag>
+        ),
+      },
+      {
+        title: "分组",
+        dataIndex: "group",
+        width: 120,
+        render: () => <div>-</div>,
+      },
+      {
+        title: "角色",
+        dataIndex: "role",
+        width: 140,
+        render: (role: UserItem["role"]) => {
+          const isAdmin = role === "admin";
+          return (
+            <Tag color={isAdmin ? "yellow" : "blue"} shape="circle">
+              {isAdmin ? "管理员" : "普通用户"}
+            </Tag>
+          );
+        },
+      },
+      {
+        title: "邀请信息",
+        dataIndex: "invite",
+        width: 220,
+        render: () => (
+          <div className="flex flex-wrap gap-1">
+            <Tag color="white" shape="circle" className="!text-xs">
+              邀请: 0
+            </Tag>
+            <Tag color="white" shape="circle" className="!text-xs">
+              收益: 0
+            </Tag>
+            <Tag color="white" shape="circle" className="!text-xs">
+              无邀请人
+            </Tag>
+          </div>
+        ),
+      },
+      {
+        title: "",
+        dataIndex: "operate",
+        fixed: "right" as const,
+        width: 200,
+        render: (_: unknown, record: UserItem) => {
+          return (
+            <Button
+              type="tertiary"
+              size="small"
+              onClick={() => window.alert(`用户：${record.username}`)}
+            >
+              操作
+            </Button>
+          );
+        },
+      },
+    ],
+    []
+  );
+
   return (
     <RequireAuth>
       <RequireAdmin>
-        <div className="relative w-screen min-h-[100dvh] box-border pt-14 overflow-hidden text-slate-800 selection:bg-indigo-500/20">
-          <FluidBackground />
+        <div className="relative w-screen min-h-[100dvh] box-border pt-14 overflow-hidden">
           <AppHeader mode="overlay" />
-          <main className="mx-auto max-w-6xl px-4 pt-8 pb-6 space-y-4 relative z-10">
-          <div className="glass-panel-strong p-4 md:p-5 flex items-center gap-3">
-            <div>
-              <h1 className="text-xl font-semibold text-slate-900">Admin / Users</h1>
-              <p className="text-xs text-slate-500 mt-1">用户检索、角色调整、禁用与重置密码</p>
-            </div>
-            <button
-              type="button"
-              onClick={load}
-              className="ml-auto glass-btn"
+          <main className="newapi-scope mx-auto max-w-6xl px-6 md:px-7 pt-10 pb-10 space-y-3 relative z-10">
+            <Modal
+              title="添加用户"
+              visible={showAddUser}
+              onCancel={() => setShowAddUser(false)}
+              footer={null}
             >
-              刷新
-            </button>
-          </div>
-
-          <div className="glass-panel p-4 flex flex-wrap items-center gap-2">
-            <input
-              value={q}
-              onChange={(e) => {
-                setOffset(0);
-                setQ(e.target.value);
-              }}
-              placeholder="搜索用户名…"
-              className="glass-input w-64 max-w-full text-sm"
-            />
-            <select
-              value={limit}
-              onChange={(e) => {
-                setOffset(0);
-                setLimit(Number(e.target.value));
-              }}
-              className="glass-input w-28 text-sm"
-            >
-              {[20, 50, 100].map((n) => (
-                <option key={n} value={n}>
-                  {n} / 页
-                </option>
-              ))}
-            </select>
-            <div className="ml-auto flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setOffset((v) => Math.max(0, v - limit))}
-                disabled={!canPrev}
-                className="glass-btn glass-btn-secondary"
-              >
-                上一页
-              </button>
-              <button
-                type="button"
-                onClick={() => setOffset((v) => v + limit)}
-                disabled={!canNext}
-                className="glass-btn glass-btn-secondary"
-              >
-                下一页
-              </button>
-              <div className="text-xs text-slate-500">
-                offset={offset} / total={total}
+              <div className="text-sm" style={{ color: "var(--semi-color-text-1)" }}>
+                该仓库后端未提供与 new-api 完全一致的新增用户接口，这里仅保留对齐后的 UI。
               </div>
-            </div>
-          </div>
+              <div className="mt-4 flex justify-end gap-2">
+                <Button type="tertiary" onClick={() => setShowAddUser(false)}>
+                  关闭
+                </Button>
+              </div>
+            </Modal>
 
-          {errorText ? (
-            <div className="glass-alert glass-alert-error">
-              {errorText}
-            </div>
-          ) : null}
+            <CardPro
+              type="type1"
+              descriptionArea={
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2 w-full">
+                  <div className="flex items-center text-blue-500">
+                    <IconUserAdd className="mr-2" />
+                    <Typography.Text>用户管理</Typography.Text>
+                  </div>
+                </div>
+              }
+              actionsArea={
+                <div className="flex flex-col md:flex-row justify-between items-center gap-2 w-full">
+                  <div className="flex gap-2 w-full md:w-auto order-2 md:order-1">
+                    <Button
+                      className="w-full md:w-auto"
+                      onClick={() => setShowAddUser(true)}
+                      size="small"
+                    >
+                      添加用户
+                    </Button>
+                  </div>
 
-          {loading ? (
-            <div className="glass-panel p-4 text-sm text-slate-600">加载中…</div>
-          ) : (
-            <div className="glass-table overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead className="text-slate-600">
-                  <tr>
-                    <th className="text-left font-semibold px-3 py-2">username</th>
-                    <th className="text-left font-semibold px-3 py-2">role</th>
-                    <th className="text-left font-semibold px-3 py-2">disabled</th>
-                    <th className="text-left font-semibold px-3 py-2">created_at</th>
-                    <th className="text-left font-semibold px-3 py-2">actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((u) => (
-                    <tr key={u.id}>
-                      <td className="px-3 py-2">
-                        <div className="font-semibold text-slate-900">{u.username}</div>
-                        <div className="font-mono text-xs text-slate-500 break-all">{u.id}</div>
-                      </td>
-                      <td className="px-3 py-2">
-                        <select
-                          value={u.role}
-                          onChange={(e) => patchUser(u.id, { role: e.target.value })}
-                          className="glass-input w-24 text-sm py-1.5"
+                  <Form
+                    initValues={{ searchKeyword: q, searchGroup: group }}
+                    getFormApi={(api) => {
+                      formApiRef.current = api;
+                    }}
+                    onSubmit={() => {
+                      handleQuery();
+                    }}
+                    allowEmpty={true}
+                    autoComplete="off"
+                    layout="horizontal"
+                    trigger="change"
+                    stopValidateWithError={false}
+                    className="w-full md:w-auto order-1 md:order-2"
+                  >
+                    <div className="flex flex-col md:flex-row items-center gap-2 w-full md:w-auto">
+                      <div className="relative w-full md:w-64">
+                        <Form.Input
+                          field="searchKeyword"
+                          prefix={<IconSearch />}
+                          placeholder="支持搜索用户的 ID、用户名、显示名称和邮箱地址"
+                          showClear
+                          pure
+                          size="small"
+                        />
+                      </div>
+                      <div className="w-full md:w-48">
+                        <Form.Select
+                          field="searchGroup"
+                          placeholder="选择分组"
+                          optionList={groupOptions}
+                          onChange={() => {
+                            setTimeout(() => {
+                              handleQuery();
+                            }, 100);
+                          }}
+                          className="w-full"
+                          showClear
+                          pure
+                          size="small"
+                        />
+                      </div>
+                      <div className="flex gap-2 w-full md:w-auto">
+                        <Button
+                          type="tertiary"
+                          htmlType="submit"
+                          loading={loading}
+                          className="flex-1 md:flex-initial md:w-auto"
+                          size="small"
                         >
-                          <option value="user">user</option>
-                          <option value="admin">admin</option>
-                        </select>
-                      </td>
-                      <td className="px-3 py-2">
-                        <button
-                          type="button"
-                          onClick={() => patchUser(u.id, { is_disabled: !u.is_disabled })}
-                          className={[
-                            "text-xs px-2 py-1 rounded-md border",
-                            u.is_disabled
-                              ? "border-rose-200 bg-rose-50/80 text-rose-700 hover:bg-rose-100"
-                              : "border-emerald-200 bg-emerald-50/80 text-emerald-700 hover:bg-emerald-100",
-                          ].join(" ")}
+                          查询
+                        </Button>
+                        <Button
+                          type="tertiary"
+                          onClick={handleReset}
+                          className="flex-1 md:flex-initial md:w-auto"
+                          size="small"
                         >
-                          {u.is_disabled ? "已禁用" : "正常"}
-                        </button>
-                      </td>
-                      <td className="px-3 py-2">{fmt(u.created_at)}</td>
-                      <td className="px-3 py-2">
-                        <button
-                          type="button"
-                          onClick={() => resetPassword(u.id)}
-                          className="glass-btn glass-btn-secondary text-xs px-2 py-1.5"
-                        >
-                          重置密码
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                          重置
+                        </Button>
+                      </div>
+                    </div>
+                  </Form>
+                </div>
+              }
+              paginationArea={
+                createCardProPagination({
+                  currentPage: activePage,
+                  pageSize,
+                  total,
+                  onPageChange: (page) => setActivePage(page),
+                  onPageSizeChange: (size) => {
+                    setPageSize(size);
+                    setActivePage(1);
+                  },
+                  pageSizeOpts: [10, 20, 50, 100],
+                  showSizeChanger: true,
+                })
+              }
+            >
+              {errorText ? (
+                <div className="text-sm text-red-600 px-1">{errorText}</div>
+              ) : null}
+
+              <CardTable
+                columns={columns}
+                dataSource={items}
+                loading={loading}
+                rowKey="id"
+                hidePagination={true}
+                className="overflow-hidden"
+                size="middle"
+                scroll={{ x: "max-content" }}
+              />
+            </CardPro>
           </main>
         </div>
       </RequireAdmin>

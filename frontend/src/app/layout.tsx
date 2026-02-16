@@ -30,11 +30,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="zh-CN">
+    <html lang="zh">
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${notoSansSc.variable} antialiased`}
       >
         <SessionProvider>
+          <div className="realm-bg" aria-hidden="true" />
           {children}
         </SessionProvider>
       </body>

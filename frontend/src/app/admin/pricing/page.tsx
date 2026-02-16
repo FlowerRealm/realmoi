@@ -4,7 +4,6 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { AppHeader } from "@/components/AppHeader";
 import { RequireAdmin } from "@/components/RequireAdmin";
 import { RequireAuth } from "@/components/RequireAuth";
-import { FluidBackground } from "@/components/assistant/FluidBackground";
 import { apiFetch, getErrorMessage } from "@/lib/api";
 
 type PricingItem = {
@@ -444,40 +443,36 @@ export default function AdminPricingPage() {
   return (
     <RequireAuth>
       <RequireAdmin>
-        <div className="relative w-screen min-h-[100dvh] box-border pt-14 overflow-hidden text-slate-900 selection:bg-indigo-500/20">
-          <FluidBackground />
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-0 opacity-[0.35] [mask-image:radial-gradient(60%_55%_at_50%_20%,black,transparent)]"
-          >
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(79,70,229,0.18),transparent_45%),radial-gradient(circle_at_85%_30%,rgba(14,165,233,0.16),transparent_48%),radial-gradient(circle_at_58%_80%,rgba(16,185,129,0.12),transparent_52%)]" />
-            <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(15,23,42,0.06)_1px,transparent_1px),linear-gradient(to_bottom,rgba(15,23,42,0.06)_1px,transparent_1px)] bg-[size:42px_42px]" />
-          </div>
+        <div className="relative w-screen min-h-[100dvh] box-border pt-14 overflow-hidden">
           <AppHeader mode="overlay" />
-          <main className="mx-auto max-w-6xl px-4 pt-8 pb-10 space-y-4 relative z-10">
+          <main className="newapi-scope mx-auto max-w-6xl px-6 md:px-7 pt-10 pb-10 space-y-3 relative z-10">
             <div className="glass-panel-strong p-4 md:p-5 flex flex-wrap items-center gap-3">
               <div className="min-w-[12rem]">
-                <h1 className="text-xl font-semibold tracking-tight text-slate-950">Admin / Pricing</h1>
-                <p className="text-xs text-slate-500 mt-1">只读浏览 · 按需编辑 · 实时发现</p>
+                <h1 className="text-xl font-semibold tracking-tight" style={{ color: "var(--text-primary)" }}>
+                  Admin / Pricing
+                </h1>
+                <p className="text-xs mt-1" style={{ color: "var(--text-secondary)" }}>
+                  只读浏览 · 按需编辑 · 实时发现
+                </p>
               </div>
-              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
-                <span className="glass-chip px-2 py-1 border border-white/70 bg-white/60">
-                  总数 <span className="font-semibold text-slate-900">{stats.total}</span>
+              <div className="flex flex-wrap items-center gap-2 text-xs" style={{ color: "var(--text-secondary)" }}>
+                <span className="glass-chip px-2 py-1">
+                  总数 <span className="font-semibold" style={{ color: "var(--text-primary)" }}>{stats.total}</span>
                 </span>
-                <span className="glass-chip px-2 py-1 border border-white/70 bg-white/60">
-                  可见 <span className="font-semibold text-slate-900">{stats.visible}</span>
+                <span className="glass-chip px-2 py-1">
+                  可见 <span className="font-semibold" style={{ color: "var(--text-primary)" }}>{stats.visible}</span>
                 </span>
-                <span className="glass-chip px-2 py-1 border border-white/70 bg-white/60">
-                  Active <span className="font-semibold text-slate-900">{stats.activeCount}</span>
+                <span className="glass-chip px-2 py-1">
+                  Active <span className="font-semibold" style={{ color: "var(--text-primary)" }}>{stats.activeCount}</span>
                 </span>
-                <span className="glass-chip px-2 py-1 border border-white/70 bg-white/60">
-                  待保存 <span className="font-semibold text-slate-900">{stats.dirtyCount}</span>
+                <span className="glass-chip px-2 py-1">
+                  待保存 <span className="font-semibold" style={{ color: "var(--text-primary)" }}>{stats.dirtyCount}</span>
                 </span>
-                <span className="glass-chip px-2 py-1 border border-white/70 bg-white/60">
-                  实时发现 <span className="font-semibold text-slate-900">{stats.discovered}</span>
+                <span className="glass-chip px-2 py-1">
+                  实时发现 <span className="font-semibold" style={{ color: "var(--text-primary)" }}>{stats.discovered}</span>
                 </span>
-                <span className="glass-chip px-2 py-1 border border-white/70 bg-white/60">
-                  缺失定价 <span className="font-semibold text-slate-900">{stats.missingAny}</span>
+                <span className="glass-chip px-2 py-1">
+                  缺失定价 <span className="font-semibold" style={{ color: "var(--text-primary)" }}>{stats.missingAny}</span>
                 </span>
               </div>
               <div className="ml-auto flex items-center gap-2">

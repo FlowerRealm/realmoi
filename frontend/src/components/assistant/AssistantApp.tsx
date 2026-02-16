@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { FluidBackground } from "./FluidBackground";
 import { Portal } from "./Portal";
 import { Cockpit } from "./Cockpit";
 import type { AppView, AssistantSession, JobRun, Message, PromptData } from "./types";
@@ -154,8 +153,7 @@ export function AssistantApp({ initialJobId = null }: { initialJobId?: string | 
   };
 
   return (
-    <div className="relative w-screen h-[100dvh] box-border pt-16 md:pt-20 overflow-hidden text-slate-800 selection:bg-indigo-500/20">
-      <FluidBackground />
+    <div className="newapi-scope relative w-screen h-[100dvh] box-border pt-16 md:pt-20 overflow-hidden">
 
       {view === "portal" ? (
         <Portal onStart={handleStartSession} history={history} onResume={handleResumeSession} />

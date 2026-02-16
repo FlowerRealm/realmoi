@@ -15,14 +15,18 @@ export function RequireAuth({ children }: { children: React.ReactNode }) {
   if (loading) {
     return (
       <div className="min-h-[100dvh] flex items-center justify-center">
-        <div className="glass-panel px-4 py-3 text-sm text-slate-600">加载中…</div>
+        <div className="glass-panel px-4 py-3 text-sm" style={{ color: "var(--semi-color-text-2)" }}>
+          加载中…
+        </div>
       </div>
     );
   }
   if (!me) {
     return (
       <div className="min-h-[100dvh] flex items-center justify-center">
-        <div className="glass-panel px-4 py-3 text-sm text-slate-600">未登录</div>
+        <div className="glass-panel px-4 py-3 text-sm" style={{ color: "var(--semi-color-text-2)" }}>
+          未登录
+        </div>
       </div>
     );
   }

@@ -23,8 +23,8 @@ function NavLink({
       className={[
         "px-3 py-1.5 rounded-full text-sm font-medium transition-all",
         isActive
-          ? "bg-indigo-600 text-white shadow-[0_8px_20px_rgba(79,70,229,0.26)]"
-          : "text-slate-700 hover:bg-white/80",
+          ? "text-[color:var(--text-primary)] bg-[color:var(--surface-2)]"
+          : "text-[color:var(--text-secondary)] hover:opacity-85",
       ].join(" ")}
     >
       {label}
@@ -68,19 +68,32 @@ export function AppHeader({ mode = "page" }: { mode?: HeaderMode }) {
       : "sticky top-0 z-50";
 
   const barClass =
-    mode === "overlay"
-      ? "mx-2 mt-2 md:mx-3 md:mt-3 rounded-2xl border border-slate-200/75 bg-white/86 backdrop-blur-md shadow-[0_10px_24px_rgba(15,23,42,0.08)]"
-      : "mx-2 mt-2 md:mx-3 md:mt-3 rounded-2xl border border-slate-200/75 bg-white/90 backdrop-blur-md shadow-[0_10px_24px_rgba(15,23,42,0.08)]";
+    "mx-2 mt-2 md:mx-3 md:mt-3 rounded-2xl shadow-[var(--shadow-soft)]";
 
   return (
     <header className={wrapperClass}>
-      <div className={barClass}>
-        <div className="mx-auto max-w-6xl px-4 py-3 flex items-center gap-4">
-          <Link href="/" className="font-semibold tracking-tight text-slate-900 text-base">
+      <div
+        className={barClass}
+        style={{
+          background: "color-mix(in hsl, var(--surface) 78%, white)",
+        }}
+      >
+        <div className="mx-auto max-w-6xl px-5 py-3 flex items-center gap-4">
+          <Link
+            href="/"
+            className="font-semibold tracking-tight text-base"
+            style={{ color: "var(--text-primary)" }}
+          >
             Realm OI
           </Link>
 
-          <nav className="flex flex-wrap items-center gap-1.5 rounded-full bg-slate-100/80 p-1 border border-slate-200/90">
+          <nav
+            className="flex flex-wrap items-center gap-1.5 rounded-full p-1"
+            style={{
+              background: "var(--surface)",
+            }}
+            aria-label="主导航"
+          >
             {links.map((l) => (
               <NavLink
                 key={l.href}
@@ -97,8 +110,17 @@ export function AppHeader({ mode = "page" }: { mode?: HeaderMode }) {
 
           <div className="ml-auto flex items-center gap-3">
             {me ? (
-              <div className="hidden md:block text-sm text-slate-600 rounded-full px-3 py-1.5 border border-slate-200/90 bg-white/90">
-                {me.username} <span className="text-slate-400">({me.role})</span>
+              <div
+                className="hidden md:block text-sm rounded-full px-3 py-1.5"
+                style={{
+                  color: "var(--text-secondary)",
+                  background: "var(--surface)",
+                }}
+              >
+                {me.username}{" "}
+                <span style={{ color: "var(--text-muted)" }}>
+                  ({me.role})
+                </span>
               </div>
             ) : null}
             <button

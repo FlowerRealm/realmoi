@@ -218,7 +218,7 @@ export function Portal({
                     <button
                       key={session.id}
                       onClick={() => onResume(session)}
-                      className="w-full text-left p-3 rounded-xl bg-white/80 border border-slate-200 hover:bg-white transition-all group shadow-sm"
+                      className="w-full text-left p-3 rounded-2xl glass-panel hover:opacity-90 transition-opacity group"
                     >
                       <div className="text-sm font-medium text-slate-700 truncate mb-1 group-hover:text-indigo-600">
                         {session.title}
@@ -235,8 +235,6 @@ export function Portal({
         ) : null}
 
         <div className="flex flex-col items-center justify-center w-full max-w-5xl relative z-10 transition-all duration-700">
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[420px] h-[420px] bg-indigo-200/20 rounded-full blur-[92px] pointer-events-none" />
-
           <div
             className={[
               "text-center transition-all duration-700 ease-[cubic-bezier(0.23,1,0.32,1)] relative z-10 overflow-hidden",
