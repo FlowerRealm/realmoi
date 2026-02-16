@@ -8,6 +8,12 @@
 
 - **[frontend/auth]**: `/login`、`/signup` 的输入框前缀图标不再与占位文字重叠（强制 `padding-left` 优先级，避免被基础样式覆盖）
 
+### 维护
+
+- **[repo/git]**: 推送变更到 `origin/master`
+  - ⚠️ EHRB: 远端主分支变更 - 用户已确认风险
+  - 检测依据: `master(分支)` + 语义判定（推送到远端主分支）
+
 ### 验证
 
 - **[scripts/playwright]**: UI 巡检回归：`output/playwright/ui-audit/20260216_171708/report.md`（66/66 ok，指标全为 0）
