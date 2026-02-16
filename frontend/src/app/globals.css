@@ -1449,13 +1449,19 @@ body {
 .newapi-scope .table-scroll-card {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 110px);
-  max-height: calc(100vh - 110px);
+  height: calc(100dvh - 110px);
+  max-height: calc(100dvh - 110px);
+  /* Semi Card 默认 overflow:hidden 会裁切内部可交互元素（分页/表格阴影等），这里放开裁切，滚动由 body 承担。 */
+  overflow: visible;
 }
 
 .newapi-scope .table-scroll-card .semi-card-body {
   flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
   overflow-y: auto;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .newapi-scope .table-scroll-card .semi-card-body::-webkit-scrollbar {
@@ -1477,8 +1483,8 @@ body {
 
 @media (max-width: 767px) {
   .newapi-scope .table-scroll-card {
-    height: calc(100vh - 77px);
-    max-height: calc(100vh - 77px);
+    height: calc(100dvh - 77px);
+    max-height: calc(100dvh - 77px);
   }
 }
 

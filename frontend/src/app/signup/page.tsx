@@ -85,7 +85,7 @@ export default function SignupPage() {
                 placeholder="例如：linche"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="pl-10"
+                className="!pl-10"
               />
             </div>
           </div>
@@ -105,7 +105,7 @@ export default function SignupPage() {
                 placeholder="8-20 位"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="pl-10"
+                className="!pl-10"
               />
             </div>
           </div>
@@ -125,7 +125,7 @@ export default function SignupPage() {
                 placeholder="再输入一次"
                 value={password2}
                 onChange={(e) => setPassword2(e.target.value)}
-                className="pl-10"
+                className="!pl-10"
               />
             </div>
           </div>

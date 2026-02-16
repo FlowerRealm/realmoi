@@ -4,7 +4,13 @@ import React, { useState } from "react";
 import { Button, Col, Form, Row, Space, Spin } from "@douyinfe/semi-ui";
 import type { RatioOptions } from "./types";
 
-const SemiForm = Form as unknown as React.ComponentType<any>;
+type SemiFormProps = {
+  values: RatioOptions;
+  style?: React.CSSProperties;
+  children?: React.ReactNode;
+};
+
+const SemiForm = Form as unknown as React.ComponentType<SemiFormProps>;
 
 export function ModelRatioSettings({
   options,

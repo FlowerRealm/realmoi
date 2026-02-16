@@ -2,6 +2,95 @@
 
 本项目使用语义化版本号（SemVer），并遵循 Keep a Changelog 的组织方式记录变更。
 
+## [0.2.124] - 2026-02-16
+
+### 修复
+
+- **[frontend/auth]**: `/login`、`/signup` 的输入框前缀图标不再与占位文字重叠（强制 `padding-left` 优先级，避免被基础样式覆盖）
+
+### 验证
+
+- **[scripts/playwright]**: UI 巡检回归：`output/playwright/ui-audit/20260216_171708/report.md`（66/66 ok，指标全为 0）
+
+## [0.2.123] - 2026-02-16
+
+### 调整
+
+- **[frontend/admin-pricing]**: 模型价格卡片在“未编辑”状态改为纯展示样式（去掉类似输入框的外框），仅在点击“编辑”后才出现表单外观
+- **[frontend/admin-pricing]**: 只读态移除 `upstream_channel/currency/unit` 元信息展示，降低噪声与“可编辑错觉”（渠道仅在编辑态的“高级字段”中可改）
+
+### 验证
+
+- **[scripts/playwright]**: UI 巡检回归：`output/playwright/ui-audit/20260216_163411/report.md`（66/66 ok，指标全为 0）
+
+## [0.2.122] - 2026-02-16
+
+### 调整
+
+- **[frontend/admin-users]**: 将 `Admin / Users` 的“右侧管理面板”改为点击列表弹出“管理用户”小窗口（Modal），桌面端列表恢复单栏展示
+
+### 验证
+
+- **[scripts/playwright]**: UI 巡检回归：`output/playwright/ui-audit/20260216_161705/report.md`（66/66 ok，指标全为 0）
+
+## [0.2.121] - 2026-02-16
+
+### 新增
+
+- **[backend/admin-users]**: 新增 `POST /api/admin/users`：管理员创建用户（username/password/role/is_disabled）
+- **[frontend/admin-users]**: `Admin / Users` 重新设计并补齐功能：新建用户、角色切换、启用/禁用、重置密码（Modal）+ 右侧管理面板
+- **[backend/tests]**: 新增 `test_admin_users.py` 覆盖用户管理接口（create/list/patch/reset_password）
+
+### 调整
+
+- **[backend/admin-users]**: `GET /api/admin/users` 支持 `role` 与 `is_disabled` 过滤参数
+
+### 修复
+
+- **[frontend/admin-users]**: 移动端列表列收敛（隐藏创建时间），避免按钮被裁切；UI 巡检回归 `clip/occluded` 指标清零
+- **[tests]**: pytest 继承真实 `jobs/` 快照时忽略 dangling symlinks，避免 `shutil.copytree` 因缺失 target 报错
+
+## [0.2.120] - 2026-02-16
+
+### 修复
+
+- **[frontend/admin-pricing]**: “创建”按钮在窄列下不再自动换行成竖排字（调整表单栅格占比 + `whitespace-nowrap`）
+- **[frontend/admin-users]**: `Admin / Users` 页面改为与其它业务页一致的 glass 风格（移除 Semi Card/Table 表现差异，改为自绘表格 + 同款筛选/分页条）
+
+## [0.2.119] - 2026-02-16
+
+### 维护
+
+- **[scripts/playwright]**: `pw_ui_audit.sh` 在默认隔离 `jobs_root` 时自动注入一个样例 Job（从 `jobs/` 复制），避免 `/jobs/[jobId]` 因无数据被标记为 skipped
+- **[frontend/playwright]**: UI 巡检截图增加重试，降低偶发 `Page.captureScreenshot` 协议错误导致的 `report.md` error 记录
+
+## [0.2.118] - 2026-02-16
+
+### 修复
+
+- **[frontend/layout]**: 业务页外层由 `overflow-hidden` 调整为 `overflow-x-hidden`，避免内容被截断且保留横向溢出保护（`/billing`、`/settings/codex`、`/admin/*`）
+- **[frontend/header]**: `AppHeader` 主导航在窄屏改为横向滚动（不再 wrap），降低顶栏高度波动导致的内容/按钮错位风险
+- **[frontend/table]**: `.table-scroll-card` 的卡片 body 增加 `overflow-x: auto`，并将 `Admin / Users` 表格 wrapper 调整为 `overflow-x-auto`，减少移动端表格被裁切/无法横向滚动的问题
+
+### 调整
+
+- **[frontend/playwright]**: UI 巡检报告新增自动信号：overflow 裁切、点击目标遮挡/重叠、按钮行不对齐、文本截断，并在 `report.md` 汇总
+
+### 维护
+
+- **[scripts/playwright]**: `pw_ui_audit.sh` 对输出目录做绝对路径归一化，避免 Playwright 输出落到 `frontend/` 下
+
+## [0.2.117] - 2026-02-16
+
+### 新增
+
+- **[frontend/playwright]**: 新增“全站 UI 巡检”能力（仅 Chromium）：自动发现路由、多视口逐页截图、生成 `report.md` + `report.jsonl`
+- **[scripts/playwright]**: 新增一键脚本 `scripts/pw_ui_audit.sh`：自动启动 backend/frontend 并产出巡检报告到 `output/playwright/ui-audit/<timestamp>/`
+
+### 维护
+
+- **[frontend/lint]**: 补齐 `newapi/ratio` 组件的类型声明，修复 `@typescript-eslint/no-explicit-any` 导致的 lint 失败
+
 ## [0.2.116] - 2026-02-10
 
 ### 调整

@@ -71,7 +71,7 @@ export function AppHeader({ mode = "page" }: { mode?: HeaderMode }) {
     "mx-2 mt-2 md:mx-3 md:mt-3 rounded-2xl shadow-[var(--shadow-soft)]";
 
   return (
-    <header className={wrapperClass}>
+    <header className={wrapperClass} data-app-header="1">
       <div
         className={barClass}
         style={{
@@ -88,7 +88,7 @@ export function AppHeader({ mode = "page" }: { mode?: HeaderMode }) {
           </Link>
 
           <nav
-            className="flex flex-wrap items-center gap-1.5 rounded-full p-1"
+            className="flex flex-1 min-w-0 flex-nowrap items-center gap-1.5 rounded-full p-1 overflow-x-auto whitespace-nowrap custom-scrollbar"
             style={{
               background: "var(--surface)",
             }}

@@ -48,6 +48,7 @@
 - 外层一致：所有业务页统一采用 `/` 同款画布壳层与 `AppHeader mode="overlay"` 导航模式
 - 间距修复：业务页主内容上边距统一为 `pt-8`，避免与顶栏边框视觉叠加
 - 图标规范：新增 `icon-wrap`，统一按钮图标与符号图标的居中对齐
+- 登录/注册：输入框前缀图标的左侧内边距固定为 `!pl-10`，避免图标与文字重叠（兼容被基础样式覆盖的情况）
 
 ## 终端与状态流
 
@@ -144,11 +145,21 @@
 
 - 数据来源：自动聚合全部已启用渠道的实时 `model id`（`/admin/upstream/models`），并与已保存的价格配置做 union；实时发现的模型以 `INACTIVE` 卡片显示（可直接补齐字段后保存）
 - 编辑行为：默认只读（字段以文本展示）；点击单条“编辑”进入编辑态（字段变为受控输入），点击“取消”会回滚到进入编辑态前的快照
+- 展示优化：只读态不再使用“类似输入框的外框”展示数值，减少误导用户“当前可直接编辑”的视觉暗示
+- 元信息收敛：只读态隐藏 `upstream_channel/currency/unit`，仅保留 `model/ACTIVE/4 个价格字段`；渠道修改移至编辑态“高级字段”
 - 保存策略：按 `model` 逐条保存；编辑态下修改会标记为“待保存”，仅 dirty 时可点击“保存”；保存中展示 loading；保存成功会退出编辑态并清除 dirty（不触发全量 reload）
 - 启用校验：当条目 `ACTIVE=true` 且缺失任一价格字段时，缺失输入会高亮并显示提示；点击保存会被前端拦截并提示“需填齐 4 个字段”，避免后端 422
-- 交互表达：`ACTIVE` 在编辑态使用 switch；只读态仅展示“已启用/未启用”；`unit` 以只读 code 形态展示；头部提供总数/可见/active/待保存/实时发现/缺失定价等关键指标
+- 交互表达：`ACTIVE` 在编辑态使用 switch；只读态仅展示“已启用/未启用”；币种/单位为固定概念不在卡片中冗余展示；头部提供总数/可见/active/待保存/实时发现/缺失定价等关键指标
 - 拉取容错：按渠道并行拉取实时模型；单个渠道失败不阻断整体展示，仅提示“部分渠道拉取失败”
 - 前缀显示：模型显示统一按 `"[channel] model"` 前缀化；空渠道显示为 `未分配`
+
+## Admin / Users 页面风格
+
+- 页面壳层与其它业务页一致：顶部 `glass-panel-strong` 标题区（含 KPI chips）+ `glass-panel` 筛选区 + 列表区
+- 列表区为自绘 `glass-table`：列聚焦 `username/role/status/actions`；移动端隐藏“创建时间”列，避免窄屏裁切与按钮遮挡
+- 管理弹窗：点击列表“管理”弹出小窗口，展示用户详情（id/创建时间/徽标），支持角色切换、启用/禁用、重置密码入口；并对“禁用自己”给出前端提示（后端亦会拦截）
+- 弹窗：支持“新建用户”（随机生成密码）与“重置密码”（随机生成 + 一键复制）
+- 分页条沿用同款组件组合（上一页/下一页 + 每页条数），与 `Admin / Pricing`、`Admin / Upstream Models` 的交互密度一致
 
 ## 配置
 
@@ -159,6 +170,23 @@
 ## 本地开发
 
 - 推荐：项目根目录执行 `make dev`（会自动设置 `NEXT_PUBLIC_API_BASE_URL` 指向本地后端）
+
+## UI 巡检（Playwright 截图）
+
+- 目的：全站逐页截图（多视口），用于定位“按钮不对齐 / 内容裁切 / 布局错位”等 UI 问题；先输出 `report.md` + 截图，再按清单逐项修复回归（B 流程）。
+- 一键运行：`bash scripts/pw_ui_audit.sh`（或传入自定义输出目录作为第 1 个参数）
+- 输出目录：`output/playwright/ui-audit/<timestamp>/`
+  - `report.md`：问题索引与截图路径
+    - 自动信号（启发式）：水平溢出、overflow 裁切、点击目标遮挡/重叠、按钮行不对齐、文本截断
+  - `screenshots/<project>/`：按视口（project）分组的 viewport/fullPage 截图
+  - `playwright.log`、`dev_backend.log`、`dev_frontend.log`：运行日志
+- 常用环境变量：
+  - `REALMOI_BACKEND_PORT` / `REALMOI_FRONTEND_PORT`：端口
+  - `REALMOI_PW_USERNAME` / `REALMOI_PW_PASSWORD`：用于登录（默认继承 `REALMOI_ADMIN_USERNAME` / `REALMOI_ADMIN_PASSWORD`）
+  - `REALMOI_PW_JOB_ID`：覆盖 `/jobs/[jobId]` 的动态参数（未提供时脚本会尽量自动补齐：默认隔离的 `jobs_root` 会注入样例 Job，或通过 `/api/jobs` 自动解析）
+  - `REALMOI_DB_PATH` / `REALMOI_JOBS_ROOT` / `REALMOI_CODEX_AUTH_JSON_PATH`：后端数据与产物路径（脚本默认隔离到本次 `out_dir` 下，避免污染已有本地数据）
+    - 脚本默认隔离 `jobs_root=out_dir/jobs`，并会从仓库根目录 `jobs/` 复制 1 个样例 Job 进去，保证 `/jobs/[jobId]` 可被巡检覆盖
+    - 如需用“真实数据”复现错位/裁切：可把 `REALMOI_DB_PATH` / `REALMOI_JOBS_ROOT` 指向一份带数据的拷贝（推荐先复制再跑），并确保登录账号具备 `admin` 权限
 
 ## 设计稿（Pencil）
 

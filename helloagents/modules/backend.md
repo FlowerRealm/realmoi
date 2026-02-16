@@ -103,6 +103,19 @@
 - 任务执行阶段仍会使用 `REALMOI_RUNNER_IMAGE` 创建容器（默认镜像按需自动拉取）
 - 单独启动后端：`uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000`
 
+## 用户管理接口（admin）
+
+- 路由：
+  - `GET /api/admin/users`：用户列表（分页）
+    - 参数：`q`（username like）、`role`（`user/admin`）、`is_disabled`（bool）、`limit`、`offset`
+  - `POST /api/admin/users`：创建用户
+    - body：`username/password/role/is_disabled`
+  - `PATCH /api/admin/users/{user_id}`：更新用户
+    - body：`role` / `is_disabled`
+    - 约束：不能禁用自己；必须保留至少 1 个启用的 `admin`
+  - `POST /api/admin/users/{user_id}/reset_password`：重置密码
+    - body：`new_password`（8–72）
+
 ## 账单看板接口（admin）
 
 - 路由：`GET /api/admin/billing/summary`

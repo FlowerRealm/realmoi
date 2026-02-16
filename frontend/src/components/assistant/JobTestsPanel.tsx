@@ -372,7 +372,7 @@ export function JobTestsPanel({
                 <details
                   key={key}
                   className={[
-                    "group rounded-xl border shadow-sm overflow-hidden",
+                    "group rounded-xl border shadow-sm",
                     "transition-all duration-200",
                     "hover:shadow-md hover:-translate-y-[1px]",
                     "group-open:shadow-md group-open:-translate-y-[1px]",

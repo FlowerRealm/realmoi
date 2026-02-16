@@ -180,7 +180,7 @@ export default function AdminBillingPage() {
   return (
     <RequireAuth>
       <RequireAdmin>
-        <div className="relative w-screen min-h-[100dvh] box-border pt-14 overflow-hidden">
+        <div className="relative w-full min-h-[100dvh] box-border pt-14 overflow-x-hidden">
           <AppHeader mode="overlay" />
           <main className="newapi-scope mx-auto max-w-6xl px-6 md:px-7 pt-10 pb-10 space-y-3 relative z-10">
             <div className="glass-panel-strong p-4 md:p-5 flex items-center gap-3">

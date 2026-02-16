@@ -121,16 +121,15 @@ function ReadonlyField({
   mono?: boolean;
   danger?: boolean;
 }) {
+  const isEmpty = value.trim() === "—";
   return (
     <div className="space-y-1">
       <div className="text-[11px] font-medium text-slate-600">{label}</div>
       <div
         className={[
-          "rounded-xl border px-3 py-2 text-xs",
-          mono ? "font-mono" : "",
-          danger
-            ? "border-rose-200 bg-rose-50/70 text-rose-700"
-            : "border-white/60 bg-white/50 text-slate-800",
+          "text-sm leading-snug",
+          mono ? "font-mono text-xs break-all" : "font-semibold",
+          danger ? "text-rose-700" : isEmpty ? "text-slate-400" : "text-slate-900",
         ].join(" ")}
       >
         {value}
@@ -155,7 +154,6 @@ export default function AdminPricingPage() {
 
   const [newModel, setNewModel] = useState("");
   const [newUpstreamChannel, setNewUpstreamChannel] = useState("");
-  const [newCurrency, setNewCurrency] = useState("USD");
 
   const refreshLiveModels = useCallback(async () => {
     setLiveReady(false);
@@ -403,7 +401,6 @@ export default function AdminPricingPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           upstream_channel: newUpstreamChannel,
-          currency: newCurrency,
           is_active: false,
         }),
       });
@@ -443,7 +440,7 @@ export default function AdminPricingPage() {
   return (
     <RequireAuth>
       <RequireAdmin>
-        <div className="relative w-screen min-h-[100dvh] box-border pt-14 overflow-hidden">
+        <div className="relative w-full min-h-[100dvh] box-border pt-14 overflow-x-hidden">
           <AppHeader mode="overlay" />
           <main className="newapi-scope mx-auto max-w-6xl px-6 md:px-7 pt-10 pb-10 space-y-3 relative z-10">
             <div className="glass-panel-strong p-4 md:p-5 flex flex-wrap items-center gap-3">
@@ -495,7 +492,7 @@ export default function AdminPricingPage() {
                   </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-2">
-                  <label className="md:col-span-6 space-y-1">
+                  <label className="md:col-span-7 space-y-1">
                     <div className="text-[11px] font-medium text-slate-600">model</div>
                     <input
                       value={newModel}
@@ -505,7 +502,7 @@ export default function AdminPricingPage() {
                     />
                   </label>
                   <label className="md:col-span-3 space-y-1">
-                    <div className="text-[11px] font-medium text-slate-600">upstream_channel</div>
+                    <div className="text-[11px] font-medium text-slate-600">渠道</div>
                     <input
                       value={newUpstreamChannel}
                       onChange={(e) => setNewUpstreamChannel(e.target.value)}
@@ -513,20 +510,12 @@ export default function AdminPricingPage() {
                       className="glass-input text-sm"
                     />
                   </label>
-                  <label className="md:col-span-2 space-y-1">
-                    <div className="text-[11px] font-medium text-slate-600">currency</div>
-                    <input
-                      value={newCurrency}
-                      onChange={(e) => setNewCurrency(e.target.value)}
-                      className="glass-input text-sm"
-                    />
-                  </label>
-                  <div className="md:col-span-1 flex items-end">
+                  <div className="md:col-span-2 flex items-end">
                     <button
                       type="button"
                       onClick={createModel}
                       disabled={!newModel.trim() || savingModels.has("__new__")}
-                      className="glass-btn w-full"
+                      className="glass-btn w-full whitespace-nowrap"
                     >
                       {savingModels.has("__new__") ? "创建中…" : "创建"}
                     </button>
@@ -657,31 +646,29 @@ export default function AdminPricingPage() {
 
                     {isEditing ? (
                       <>
-                        <div className="mt-4 grid grid-cols-1 md:grid-cols-12 gap-2">
-                          <label className="md:col-span-4 space-y-1">
-                            <div className="text-[11px] font-medium text-slate-600">upstream_channel</div>
-                            <input
-                              value={r.upstream_channel || ""}
-                              onChange={(e) => updateRow(r.model, { upstream_channel: e.target.value })}
-                              className="glass-input text-sm"
-                              placeholder="渠道"
-                            />
-                          </label>
-                          <label className="md:col-span-2 space-y-1">
-                            <div className="text-[11px] font-medium text-slate-600">currency</div>
-                            <input
-                              value={r.currency || ""}
-                              onChange={(e) => updateRow(r.model, { currency: e.target.value })}
-                              className="glass-input text-sm"
-                            />
-                          </label>
-                          <div className="md:col-span-6">
-                            <div className="text-[11px] font-medium text-slate-600">unit</div>
-                            <div className="mt-1 text-xs text-slate-500 font-mono rounded-xl border border-white/60 bg-white/50 px-3 py-2">
-                              {r.unit}
+                        <details className="mt-4 rounded-xl border border-white/60 bg-white/40 px-3 py-2">
+                          <summary className="cursor-pointer list-none flex items-center gap-2">
+                            <span className="text-xs font-semibold text-slate-900">高级字段</span>
+                            <span className="text-[11px] text-slate-500">仅在需要时修改渠道</span>
+                          </summary>
+                          <div className="mt-3 grid grid-cols-1 md:grid-cols-12 gap-2">
+                            <label className="md:col-span-6 space-y-1">
+                              <div className="text-[11px] font-medium text-slate-600">渠道</div>
+                              <input
+                                value={r.upstream_channel || ""}
+                                onChange={(e) => updateRow(r.model, { upstream_channel: e.target.value })}
+                                className="glass-input text-sm"
+                                placeholder="例如 openai"
+                              />
+                            </label>
+                            <div className="md:col-span-6">
+                              <div className="text-[11px] font-medium text-slate-600">说明</div>
+                              <div className="mt-1 text-xs text-slate-500 leading-relaxed">
+                                渠道为空会导致该模型不会出现在用户侧模型列表中；通常保持为实时发现的渠道即可。
+                              </div>
                             </div>
                           </div>
-                        </div>
+                        </details>
 
                         <div className="mt-3 grid grid-cols-1 md:grid-cols-12 gap-2">
                           <label className="md:col-span-3 space-y-1">
@@ -744,17 +731,6 @@ export default function AdminPricingPage() {
                       </>
                     ) : (
                       <>
-                        <div className="mt-4 grid grid-cols-1 md:grid-cols-12 gap-2">
-                          <div className="md:col-span-4">
-                            <ReadonlyField label="upstream_channel" value={channelLabel} mono />
-                          </div>
-                          <div className="md:col-span-2">
-                            <ReadonlyField label="currency" value={(r.currency || "").trim() || "—"} />
-                          </div>
-                          <div className="md:col-span-6">
-                            <ReadonlyField label="unit" value={r.unit || "—"} mono />
-                          </div>
-                        </div>
                         <div className="mt-3 grid grid-cols-1 md:grid-cols-12 gap-2">
                           <div className="md:col-span-3">
                             <ReadonlyField

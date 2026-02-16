@@ -90,7 +90,7 @@ export default function LoginPage() {
                 placeholder="例如：linche / linche@example.com"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="pl-10"
+                className="!pl-10"
               />
             </div>
           </div>
@@ -110,7 +110,7 @@ export default function LoginPage() {
                 placeholder="请输入密码"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="pl-10"
+                className="!pl-10"
               />
             </div>
           </div>

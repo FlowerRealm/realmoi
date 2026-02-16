@@ -51,7 +51,7 @@ def _seed_from_real_data(*, target_root: Path) -> None:
         shutil.copy2(seed_db, target_db)
 
     if seed_jobs.exists() and seed_jobs.is_dir():
-        shutil.copytree(seed_jobs, target_jobs, dirs_exist_ok=True)
+        shutil.copytree(seed_jobs, target_jobs, dirs_exist_ok=True, ignore_dangling_symlinks=True)
 
 
 def _init_test_env() -> None:

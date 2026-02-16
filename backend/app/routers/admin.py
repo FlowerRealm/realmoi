@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
+import re
 from typing import Any
 
 from fastapi import APIRouter, Query
@@ -25,6 +26,8 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 _models_cache = upstream_models_service._models_cache
 httpx = upstream_models_service.httpx
 
+USERNAME_RE = re.compile(r"^[a-zA-Z0-9_.-]{3,32}$")
+
 
 class UserItem(BaseModel):
     id: str
@@ -40,16 +43,66 @@ class UsersListResponse(BaseModel):
 
 
 @router.get("/users", response_model=UsersListResponse)
-def list_users(_: AdminUserDep, db: DbDep, q: str | None = None, limit: int = 50, offset: int = 0):
+def list_users(
+    _: AdminUserDep,
+    db: DbDep,
+    q: str | None = None,
+    role: str | None = None,
+    is_disabled: bool | None = None,
+    limit: int = 50,
+    offset: int = 0,
+):
     stmt = select(User).order_by(User.created_at.desc())
     if q:
         stmt = stmt.where(User.username.like(f"%{q}%"))
+    if role:
+        role_key = role.strip()
+        if role_key not in ("user", "admin"):
+            http_error(422, "invalid_request", "Invalid role")
+        stmt = stmt.where(User.role == role_key)
+    if is_disabled is not None:
+        stmt = stmt.where(User.is_disabled == is_disabled)
     total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
     items = db.scalars(stmt.limit(limit).offset(offset)).all()
     return UsersListResponse(
         items=[UserItem.model_validate(u, from_attributes=True) for u in items],
         total=total,
     )
+
+
+class CreateUserRequest(BaseModel):
+    username: str
+    password: str
+    role: str = "user"
+    is_disabled: bool = False
+
+
+@router.post("/users", response_model=UserItem, status_code=201)
+def create_user(_: AdminUserDep, db: DbDep, req: CreateUserRequest):
+    username = req.username.strip()
+    if not USERNAME_RE.match(username):
+        http_error(422, "invalid_request", "Invalid username")
+    if not (8 <= len(req.password) <= 72):
+        http_error(422, "invalid_request", "Invalid password length")
+
+    role_key = (req.role or "user").strip() or "user"
+    if role_key not in ("user", "admin"):
+        http_error(422, "invalid_request", "Invalid role")
+
+    exists = db.scalar(select(User).where(User.username == username))
+    if exists:
+        http_error(409, "conflict", "Username already exists")
+
+    user = User(
+        username=username,
+        password_hash=hash_password(req.password),
+        role=role_key,
+        is_disabled=bool(req.is_disabled),
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return UserItem.model_validate(user, from_attributes=True)
 
 
 class PatchUserRequest(BaseModel):

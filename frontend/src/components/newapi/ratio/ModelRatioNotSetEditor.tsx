@@ -22,7 +22,15 @@ type UnsetModelRow = {
   completionRatio: string;
 };
 
-const SemiFormInput = Form.Input as unknown as React.ComponentType<any>;
+type SemiFormInputProps = {
+  field?: string;
+  label?: React.ReactNode;
+  placeholder?: string;
+  value?: unknown;
+  onChange?: (value: unknown) => void;
+};
+
+const SemiFormInput = Form.Input as unknown as React.ComponentType<SemiFormInputProps>;
 
 function safeParseObject(text: string): Record<string, unknown> {
   try {
