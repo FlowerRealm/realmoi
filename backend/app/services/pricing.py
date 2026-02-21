@@ -1,3 +1,6 @@
+#
+# Usage/pricing helpers.
+#
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -44,4 +47,3 @@ def microusd_to_amount_str(cost_microusd: int) -> str:
     whole = cost_microusd // MICROUSD_PER_USD
     frac = cost_microusd % MICROUSD_PER_USD
     return f"{whole}.{frac:06d}"
-

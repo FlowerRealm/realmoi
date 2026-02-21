@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+# Job tests listing + preview helpers.
+#
+# This module is used by both HTTP and MCP routes to present a stable list of
+# available tests and small previews for inputs/expected outputs.
+
 import json
 import os
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from ._preview_io import safe_read_preview_text
 from ..utils.fs import read_json
 
 
@@ -22,113 +28,88 @@ class JobTestMeta:
     expected_present: bool
 
 
-def _sanitize_tests_rel(rel: str) -> str:
-    rel = str(rel or "").strip()
+def resolve_tests_file_path(*, tests_dir: Path, tests_rel: str) -> Path:
+    """Resolve `tests/...` paths under `tests_dir` while preventing traversal."""
+    rel = str(tests_rel or "").strip()
     if not rel.startswith("tests/"):
         raise ValueError("invalid_tests_rel")
     inner = rel.removeprefix("tests/").lstrip("/")
     p = PurePosixPath(inner)
     if not inner or p.is_absolute() or ".." in p.parts:
         raise ValueError("invalid_tests_rel")
-    return inner
+
+    candidate = (tests_dir / inner).resolve()
+    root = tests_dir.resolve()
+    if root not in candidate.parents and candidate != root:
+        raise ValueError("invalid_tests_rel")
+    return candidate
 
 
-def _safe_read_preview_text(path: Path, *, max_bytes: int) -> dict[str, Any]:
-    size_bytes = int(path.stat().st_size)
-    with path.open("rb") as fp:
-        raw = fp.read(max_bytes)
-    return {
-        "text": raw.decode("utf-8", errors="replace"),
-        "truncated": size_bytes > max_bytes,
-        "bytes": size_bytes,
-    }
+def manifest_case_to_meta(*, tests_dir: Path, case: dict[str, Any]) -> JobTestMeta | None:
+    name = str(case.get("name") or "").strip()
+    if not name:
+        return None
+
+    group = str(case.get("group") or "default").strip() or "default"
+    inp = str(case.get("in") or "").strip()
+    if not inp:
+        return None
+
+    p_in = PurePosixPath(inp)
+    if p_in.is_absolute() or ".." in p_in.parts:
+        return None
+    input_rel = f"tests/{inp.lstrip('/')}"
+
+    out = case.get("out")
+    expected_rel = None
+    expected_present = False
+    if out:
+        out_s = str(out).strip()
+        p_out = PurePosixPath(out_s)
+        if out_s and not p_out.is_absolute() and ".." not in p_out.parts:
+            expected_rel = f"tests/{out_s.lstrip('/')}"
+            expected_present = (tests_dir / out_s).exists()
+
+    return JobTestMeta(
+        name=name,
+        group=group,
+        input_rel=input_rel,
+        expected_rel=expected_rel,
+        expected_present=expected_present,
+    )
 
 
-def list_job_tests(*, job_json_path: Path, tests_dir: Path) -> list[JobTestMeta]:
-    """List tests from a job input directory.
-
-    Supports:
-      - `manifest.json` (format=auto/manifest)
-      - in/out pairs (`*.in` + optional `*.out`)
-
-    Args:
-        job_json_path: Path to `input/job.json`.
-        tests_dir: Path to the extracted tests directory (typically `input/tests`).
-
-    Returns:
-        A stable-sorted list of test metadata.
-    """
-    if not tests_dir.exists():
+def list_tests_from_manifest(*, tests_dir: Path, manifest_path: Path) -> list[JobTestMeta] | None:
+    if not manifest_path.exists():
+        return None
+    try:
+        m = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    if not isinstance(m, dict):
         return []
 
-    try:
-        job = read_json(job_json_path)
-    except Exception:
-        job = {}
+    items: list[JobTestMeta] = []
+    cases = m["cases"] if "cases" in m and isinstance(m["cases"], list) else []
+    for case in cases:
+        if not isinstance(case, dict):
+            continue
+        meta = manifest_case_to_meta(tests_dir=tests_dir, case=case)
+        if meta is None:
+            continue
+        items.append(meta)
 
-    tests = job.get("tests") or {}
-    fmt = str(tests.get("format") or "auto")
+    items.sort(key=lambda x: (x.group, x.name))
+    return items
 
-    manifest_path = tests_dir / "manifest.json"
-    if fmt in ("auto", "manifest") and manifest_path.exists():
-        try:
-            m = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except Exception:
-            m = {}
 
-        items: list[JobTestMeta] = []
-        for c in m.get("cases") or []:
-            if not isinstance(c, dict):
-                continue
-            name = str(c.get("name") or "").strip()
-            if not name:
-                continue
-            group = str(c.get("group") or "default").strip() or "default"
-            inp = str(c.get("in") or "").strip()
-            if not inp:
-                continue
-
-            p_in = PurePosixPath(inp)
-            if p_in.is_absolute() or ".." in p_in.parts:
-                continue
-            input_rel = f"tests/{inp.lstrip('/')}"
-
-            out = c.get("out")
-            expected_rel = None
-            expected_present = False
-            if out:
-                out_s = str(out).strip()
-                p_out = PurePosixPath(out_s)
-                if not out_s or p_out.is_absolute() or ".." in p_out.parts:
-                    out_s = ""
-                if out_s:
-                    expected_rel = f"tests/{out_s.lstrip('/')}"
-                    expected_present = (tests_dir / out_s).exists()
-
-            items.append(
-                JobTestMeta(
-                    name=name,
-                    group=group,
-                    input_rel=input_rel,
-                    expected_rel=expected_rel,
-                    expected_present=expected_present,
-                )
-            )
-
-        items.sort(key=lambda x: (x.group, x.name))
-        return items
-
-    # in_out_pairs
+def list_tests_from_pairs(*, tests_dir: Path) -> list[JobTestMeta]:
     cases: list[JobTestMeta] = []
 
     has_subdir = any(p.is_dir() for p in tests_dir.iterdir())
     for root, _dirs, files in os.walk(tests_dir):
         root_p = Path(root)
-        group = (
-            root_p.relative_to(tests_dir).parts[0]
-            if has_subdir and root_p != tests_dir
-            else "default"
-        )
+        group = root_p.relative_to(tests_dir).parts[0] if has_subdir and root_p != tests_dir else "default"
         for fn in files:
             if not fn.endswith(".in"):
                 continue
@@ -151,6 +132,32 @@ def list_job_tests(*, job_json_path: Path, tests_dir: Path) -> list[JobTestMeta]
     return cases
 
 
+def list_job_tests(*, job_json_path: Path, tests_dir: Path) -> list[JobTestMeta]:
+    # List tests from a job input directory.
+    #
+    # Supports:
+    # - `manifest.json` (format=auto/manifest)
+    # - in/out pairs (`*.in` + optional `*.out`)
+    if not tests_dir.exists():
+        return []
+
+    try:
+        job = read_json(job_json_path)
+    except Exception:
+        job = {}
+
+    tests = job.get("tests") or {}
+    fmt = str(tests.get("format") or "auto")
+
+    manifest_path = tests_dir / "manifest.json"
+    if fmt in ("auto", "manifest"):
+        items = list_tests_from_manifest(tests_dir=tests_dir, manifest_path=manifest_path)
+        if items is not None:
+            return items
+
+    return list_tests_from_pairs(tests_dir=tests_dir)
+
+
 def read_job_test_preview(
     *,
     tests_dir: Path,
@@ -158,44 +165,26 @@ def read_job_test_preview(
     expected_rel: str | None,
     max_bytes: int,
 ) -> dict[str, Any]:
-    """Read preview text for a single test case input/expected.
-
-    Args:
-        tests_dir: Path to extracted tests directory.
-        input_rel: Relative path like `tests/01.in`.
-        expected_rel: Relative path like `tests/01.out` or None.
-        max_bytes: Max bytes to read per file (clamped).
-
-    Returns:
-        A dict with `input` and `expected` preview payload.
-    """
+    # Read preview text for a single test case input/expected.
     if not tests_dir.exists():
         raise FileNotFoundError("tests_not_found")
 
     max_bytes = int(max_bytes or DEFAULT_MAX_PREVIEW_BYTES)
     max_bytes = max(1, min(max_bytes, MAX_MAX_PREVIEW_BYTES))
 
-    in_inner = _sanitize_tests_rel(input_rel)
-    in_path = (tests_dir / in_inner).resolve()
-    root = tests_dir.resolve()
-    if root not in in_path.parents and in_path != root:
-        raise ValueError("invalid_tests_rel")
+    in_path = resolve_tests_file_path(tests_dir=tests_dir, tests_rel=input_rel)
     if not in_path.exists():
         raise FileNotFoundError("input_not_found")
 
-    result: dict[str, Any] = {"input": _safe_read_preview_text(in_path, max_bytes=max_bytes)}
+    result: dict[str, Any] = {"input": safe_read_preview_text(in_path, max_bytes=max_bytes)}
 
     if expected_rel:
-        out_inner = _sanitize_tests_rel(expected_rel)
-        out_path = (tests_dir / out_inner).resolve()
-        if root not in out_path.parents and out_path != root:
-            raise ValueError("invalid_tests_rel")
+        out_path = resolve_tests_file_path(tests_dir=tests_dir, tests_rel=expected_rel)
         if out_path.exists():
-            result["expected"] = _safe_read_preview_text(out_path, max_bytes=max_bytes)
+            result["expected"] = safe_read_preview_text(out_path, max_bytes=max_bytes)
         else:
             result["expected"] = {"text": "", "truncated": False, "bytes": 0, "missing": True}
     else:
         result["expected"] = None
 
     return result
-

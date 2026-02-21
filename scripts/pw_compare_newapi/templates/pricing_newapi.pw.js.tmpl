@@ -1,0 +1,701 @@
+async (page) => {
+const label = "__LABEL__";
+const url = "__URL__";
+
+await page.addInitScript(() => {
+  try {
+    localStorage.setItem("user", JSON.stringify({ id: 1, username: "root", role: 100, token: "test-token" }));
+    localStorage.setItem("i18nextLng", "zh");
+  } catch {}
+});
+
+const corsHeaders = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
+  "access-control-allow-headers": "*",
+  "access-control-max-age": "600",
+};
+
+const optionData = [
+  { key: "ModelPrice", value: "{}" },
+  { key: "ModelRatio", value: "{}" },
+  { key: "CacheRatio", value: "{}" },
+  { key: "CreateCacheRatio", value: "{}" },
+  { key: "CompletionRatio", value: "{}" },
+  { key: "ImageRatio", value: "{}" },
+  { key: "AudioRatio", value: "{}" },
+  { key: "AudioCompletionRatio", value: "{}" },
+  { key: "ExposeRatioEnabled", value: "false" },
+  { key: "GroupRatio", value: "{}" },
+  { key: "UserUsableGroups", value: "{}" },
+  { key: "GroupGroupRatio", value: "{}" },
+  { key: "group_ratio_setting.group_special_usable_group", value: "{}" },
+  { key: "AutoGroups", value: "[]" },
+  { key: "DefaultUseAutoGroup", value: "false" },
+];
+
+try { await page.unroute(/.*\/api\/.*/); } catch {}
+await page.route(/.*\/api\/.*/, async (route) => {
+  const req = route.request();
+  let pathname = "";
+  try {
+    pathname = new URL(req.url()).pathname;
+  } catch {
+    pathname = req.url();
+  }
+  const cleanPath = pathname.replace(/\/+$/, "");
+  const headers = { "content-type": "application/json; charset=utf-8", ...corsHeaders };
+  const match = (p) => cleanPath === p || cleanPath.endsWith(p);
+
+  if (req.method() === "OPTIONS") {
+    await route.fulfill({ status: 204, headers: corsHeaders, body: "" });
+    return;
+  }
+
+  if (/status|option|models_enabled/.test(cleanPath)) {
+    console.log("pw:newapi:api", req.method(), cleanPath, "url", req.url());
+  }
+
+  if (match("/api/status")) {
+    await route.fulfill({
+      status: 200,
+      headers,
+      body: JSON.stringify({
+        success: true,
+        data: {
+          system_name: "Realm OI",
+          logo: "/favicon.ico",
+          footer_html: "",
+          quota_per_unit: 500000,
+          display_in_currency: false,
+          quota_display_type: "USD",
+          enable_drawing: false,
+          enable_task: false,
+          enable_data_export: false,
+          chats: [],
+          data_export_default_time: "7",
+          default_collapse_sidebar: false,
+          mj_notify_enabled: false,
+          docs_link: "",
+          HeaderNavModules: null,
+          turnstile_check: false,
+          user_agreement_enabled: false,
+          privacy_policy_enabled: false,
+        },
+      }),
+    });
+    return;
+  }
+
+  if (match("/api/option")) {
+    await route.fulfill({
+      status: 200,
+      headers,
+      body: JSON.stringify({ success: true, data: optionData }),
+    });
+    return;
+  }
+
+  if (match("/api/channel/models_enabled")) {
+    await route.fulfill({
+      status: 200,
+      headers,
+      body: JSON.stringify({ success: true, data: ["gpt-4o", "gpt-4o-mini", "claude-3-5-sonnet"] }),
+    });
+    return;
+  }
+
+  await route.fulfill({
+    status: 200,
+    headers,
+    body: JSON.stringify({ success: true, message: "", data: [] }),
+  });
+});
+
+await page.goto(url, { waitUntil: "domcontentloaded" });
+await page.waitForTimeout(1200);
+
+await page.addStyleTag({
+  content: `
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+    .Toastify, .Toastify__toast-container { display: none !important; }
+    .semi-toast, .semi-toast-wrapper, .semi-notification, .semi-notification-list { display: none !important; }
+  `,
+});
+
+await page.waitForFunction(() => {
+  const cards = Array.from(document.querySelectorAll(".semi-card"));
+  return cards.some((card) => {
+    const t = card.textContent || "";
+    return t.includes("模型倍率设置") && t.includes("分组倍率设置") && t.includes("上游倍率同步");
+  });
+}, null, { timeout: 15000 });
+
+const stableShot = async (page, loc, path) => {
+  await loc.waitFor({ state: "visible", timeout: 15000 });
+  try {
+    await loc.evaluate((el) => {
+      try {
+        el.scrollIntoView({ block: "center", inline: "center" });
+      } catch {
+        el.scrollIntoView();
+      }
+    });
+  } catch {
+    await loc.scrollIntoViewIfNeeded();
+  }
+  await page.waitForTimeout(120);
+  await loc.screenshot({ path });
+  await page.waitForTimeout(200);
+  await loc.screenshot({ path });
+};
+
+const shot = async (name, sel) => {
+  const loc = page.locator(sel).first();
+  await loc.waitFor({ state: "visible", timeout: 15000 });
+
+  const box = await loc.boundingBox();
+  if (box) {
+    const clipBase = {
+      x: Math.round(box.x),
+      y: Math.round(box.y),
+      width: Math.max(1, Math.round(box.width)),
+      height: Math.max(1, Math.round(box.height)),
+    };
+
+    if (name === "pricing_model_modelprice" || name === "pricing_group_groupratio") {
+      const inset = 1;
+      let clip = {
+        x: clipBase.x + inset,
+        y: clipBase.y + inset,
+        width: Math.max(1, clipBase.width - inset * 2),
+        height: Math.max(1, clipBase.height - inset * 2),
+      };
+      const skipTop = 32;
+      if (clip.height > skipTop + 8) {
+        clip = { ...clip, y: clip.y + skipTop, height: clip.height - skipTop };
+      }
+      clip = { ...clip, height: Math.min(clip.height, 88) };
+      await page.screenshot({ path: `${label}_${name}.png`, clip });
+      return;
+    }
+
+    if (name === "pricing_model_switch") {
+      const padX = 56;
+      const padY = 8;
+      const x = Math.max(0, clipBase.x - padX);
+      const y = Math.max(0, clipBase.y - padY);
+      const width = Math.min(180, 1280 - x);
+      const height = Math.min(44, 720 - y);
+      const clip = { x, y, width, height };
+      await page.screenshot({ path: `${label}_${name}.png`, clip });
+      return;
+    }
+
+    if (name === "pricing_upstream_search") {
+      const width = Math.min(56, clipBase.width);
+      const clip = { ...clipBase, width };
+      await page.screenshot({ path: `${label}_${name}.png`, clip });
+      return;
+    }
+
+    if (name === "pricing_upstream_filter") {
+      const width = Math.min(56, clipBase.width);
+      const clip = { ...clipBase, x: clipBase.x + clipBase.width - width, width };
+      await page.screenshot({ path: `${label}_${name}.png`, clip });
+      return;
+    }
+  }
+
+  await stableShot(page, loc, `${label}_${name}.png`);
+};
+
+await page.evaluate(() => {
+  const findRatioCard = () => {
+    const cards = Array.from(document.querySelectorAll(".semi-card"));
+    for (const card of cards) {
+      const t = card.textContent || "";
+      if (t.includes("模型倍率设置") && t.includes("分组倍率设置") && t.includes("上游倍率同步")) return card;
+    }
+    return null;
+  };
+  const scope = findRatioCard() || document.body;
+  scope.setAttribute("data-pw-scope", "pricing-scope");
+  const normalize = (s) => String(s || "").replace(/\\s+/g, "");
+  const tabs = Array.from(scope.querySelectorAll('[role="tab"]'));
+  for (const tab of tabs) {
+    const t = normalize(tab.textContent);
+    let key = null;
+    if (t.includes(normalize("模型倍率设置"))) key = "model";
+    else if (t.includes(normalize("分组倍率设置"))) key = "group";
+    else if (t.includes(normalize("可视化倍率设置"))) key = "visual";
+    else if (t.includes(normalize("未设置倍率模型"))) key = "unset";
+    else if (t.includes(normalize("上游倍率同步"))) key = "upstream";
+    if (!key) continue;
+    tab.setAttribute("data-pw-target", `pricing-tab-${key}`);
+  }
+});
+
+await shot("pricing_tab_model", "#semiTabmodel");
+await shot("pricing_tab_group", "#semiTabgroup");
+await shot("pricing_tab_visual", "#semiTabvisual");
+await shot("pricing_tab_unset", "#semiTabunset_models");
+await shot("pricing_tab_upstream", "#semiTabupstream_sync");
+
+// Ensure model tab is active before capturing its content
+await page.locator("#semiTabmodel").click();
+await page.waitForTimeout(350);
+
+// Model tab (default active)
+await page.waitForFunction(() => {
+  const panel = document.querySelector("#semiTabPanelmodel");
+  if (!panel) return false;
+  if (panel.getAttribute("aria-hidden") !== "false") return false;
+  const textarea = panel.querySelector("textarea#ModelPrice");
+  if (!textarea) return false;
+  const style = window.getComputedStyle(textarea);
+  if (style.display === "none" || style.visibility === "hidden") return false;
+  const rect = textarea.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0;
+}, null, { timeout: 15000 });
+
+const ensurePanelTargetVisible = async ({ tabSel, panelSel, targetSel, fallbackTabSel }) => {
+  for (let i = 0; i < 3; i++) {
+    await page.locator(tabSel).click();
+    await page.waitForTimeout(250);
+    try {
+      await page.locator(`${panelSel}[aria-hidden="false"] ${targetSel}`).first().waitFor({ state: "visible", timeout: 5000 });
+      return true;
+    } catch {}
+    if (fallbackTabSel) {
+      await page.locator(fallbackTabSel).click();
+      await page.waitForTimeout(200);
+    }
+  }
+
+  const dbg = await page.evaluate((args) => {
+    const { panelSel, targetSel } = args;
+    const panel = document.querySelector(panelSel);
+    const t = panel ? panel.querySelector(targetSel) : null;
+    const panelStyle = panel ? window.getComputedStyle(panel) : null;
+    const tStyle = t ? window.getComputedStyle(t) : null;
+    const rect = t ? t.getBoundingClientRect() : null;
+    return {
+      panelExists: Boolean(panel),
+      panelId: panel ? panel.id : null,
+      panelAriaHidden: panel ? panel.getAttribute("aria-hidden") : null,
+      panelDisplay: panelStyle ? panelStyle.display : null,
+      panelVisibility: panelStyle ? panelStyle.visibility : null,
+      targetExists: Boolean(t),
+      targetId: t ? t.id : null,
+      targetDisplay: tStyle ? tStyle.display : null,
+      targetVisibility: tStyle ? tStyle.visibility : null,
+      targetRect: rect ? { w: rect.width, h: rect.height } : null,
+      targetCount: document.querySelectorAll(`${panelSel} ${targetSel}`).length,
+      totalModelTextareas: panel ? panel.querySelectorAll("textarea").length : 0,
+    };
+  }, { panelSel, targetSel });
+  console.log("ensurePanelTargetVisible failed:", JSON.stringify(dbg));
+  return false;
+};
+
+await page.evaluate(() => {
+  const normalize = (s) => String(s || "").replace(/\s+/g, "");
+  const scope = document.querySelector('[data-pw-scope="pricing-scope"]') || document.body;
+  const panes = Array.from(scope.querySelectorAll(".semi-tabs-pane"));
+  const pane =
+    panes.find((el) => el.classList.contains("semi-tabs-pane-active")) ||
+    panes.find((el) => el.getAttribute("aria-hidden") === "false");
+  if (!pane) return;
+
+  const isVisible = (el) => {
+    if (!el) return false;
+    const style = window.getComputedStyle(el);
+    if (style.display === "none" || style.visibility === "hidden") return false;
+    const rect = el.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  };
+  const fields = Array.from(pane.querySelectorAll(".semi-form-field"));
+  const field =
+    fields.find((el) => {
+      const label = el.querySelector(".semi-form-field-label-text");
+      return label && normalize(label.textContent) === normalize("模型固定价格");
+    }) || null;
+  const textarea = field ? Array.from(field.querySelectorAll("textarea")).find(isVisible) || field.querySelector("textarea") : null;
+  if (textarea) {
+    try { textarea.value = ""; } catch {}
+    textarea.style.width = "669px";
+    textarea.style.minWidth = "669px";
+    textarea.style.maxWidth = "669px";
+    textarea.style.boxSizing = "border-box";
+    textarea.style.overflow = "hidden";
+    textarea.style.resize = "none";
+    textarea.setAttribute("placeholder", "Placeholder");
+    textarea.setAttribute("data-pw-target", "pricing-model-modelprice");
+  }
+
+  const btns = Array.from(pane.querySelectorAll("button"));
+  const btnSave = btns.find((el) => normalize(el.textContent).includes(normalize("保存模型倍率设置")));
+  if (btnSave) {
+    btnSave.setAttribute("data-pw-target", "pricing-model-save");
+    const content = btnSave.querySelector(".semi-button-content") || btnSave;
+    content.textContent = "Save";
+  }
+  const btnReset = btns.find((el) => normalize(el.textContent).includes(normalize("重置模型倍率")));
+  if (btnReset) {
+    btnReset.setAttribute("data-pw-target", "pricing-model-reset");
+    const content = btnReset.querySelector(".semi-button-content") || btnReset;
+    content.textContent = "Reset";
+  }
+
+  const switchLabel = Array.from(pane.querySelectorAll(".semi-form-field-label-text")).find((el) =>
+    normalize(el.textContent) === normalize("暴露倍率接口"),
+  );
+  const switchWrap = switchLabel ? switchLabel.closest(".semi-form-field") : null;
+  if (switchWrap && switchLabel) {
+    switchLabel.textContent = "Switch";
+    const sw =
+      switchWrap.querySelector("button.semi-switch") ||
+      switchWrap.querySelector(".semi-switch") ||
+      switchWrap.querySelector('[role="switch"]') ||
+      switchWrap.querySelector("button") ||
+      null;
+    const target = sw || switchWrap;
+    target.setAttribute("data-pw-target", "pricing-model-switch");
+    // Make switch render identically across semi versions to avoid subpixel diffs.
+    // We only need an "off" switch representation for this screenshot.
+    try {
+      target.innerHTML = '<span data-pw-knob="1"></span>';
+    } catch {}
+    const set = (el, prop, value) => {
+      try {
+        el.style.setProperty(prop, value, "important");
+      } catch {}
+    };
+    try { target.className = ""; } catch {}
+    set(target, "all", "unset");
+    set(target, "-webkit-appearance", "none");
+    set(target, "appearance", "none");
+    set(target, "width", "44px");
+    set(target, "min-width", "44px");
+    set(target, "max-width", "44px");
+    set(target, "height", "24px");
+    set(target, "min-height", "24px");
+    set(target, "max-height", "24px");
+    set(target, "box-sizing", "border-box");
+    set(target, "padding", "0");
+    set(target, "margin", "0");
+    set(target, "border", "1px solid rgb(217, 217, 217)");
+    set(target, "background", "rgb(245, 245, 245)");
+    set(target, "border-radius", "0px");
+    set(target, "box-shadow", "none");
+    set(target, "outline", "none");
+    set(target, "filter", "none");
+    set(target, "position", "relative");
+    set(target, "display", "inline-block");
+    set(target, "overflow", "hidden");
+
+    let knob = target.querySelector('[data-pw-knob="1"]') || (sw ? sw.querySelector(".semi-switch-knob") : null);
+    if (knob) {
+      try {
+        knob.setAttribute("data-pw-knob", "1");
+      } catch {}
+    } else {
+      try {
+        knob = document.createElement("span");
+        knob.setAttribute("data-pw-knob", "1");
+        target.appendChild(knob);
+      } catch {}
+    }
+    if (knob) {
+      set(knob, "position", "absolute");
+      set(knob, "top", "1px");
+      set(knob, "left", "1px");
+      set(knob, "width", "22px");
+      set(knob, "height", "22px");
+      set(knob, "border-radius", "0px");
+      set(knob, "background", "rgb(255, 255, 255)");
+      set(knob, "box-shadow", "none");
+      set(knob, "filter", "none");
+    }
+  }
+});
+
+const collectModelDebug = () =>
+  page.evaluate(() => {
+    const panel = document.querySelector("#semiTabPanelmodel");
+    const panelStyle = panel ? window.getComputedStyle(panel) : null;
+    const textarea = panel ? panel.querySelector("textarea#ModelPrice") : document.querySelector("textarea#ModelPrice");
+    const textareaStyle = textarea ? window.getComputedStyle(textarea) : null;
+    const rect = textarea ? textarea.getBoundingClientRect() : null;
+    return {
+      url: location.href,
+      panelExists: Boolean(panel),
+      panelAriaHidden: panel ? panel.getAttribute("aria-hidden") : null,
+      panelDisplay: panelStyle ? panelStyle.display : null,
+      panelVisibility: panelStyle ? panelStyle.visibility : null,
+      textareaExists: Boolean(textarea),
+      textareaId: textarea ? textarea.id : null,
+      textareaDisplay: textareaStyle ? textareaStyle.display : null,
+      textareaVisibility: textareaStyle ? textareaStyle.visibility : null,
+      textareaRect: rect ? { w: rect.width, h: rect.height } : null,
+      textareaCount: document.querySelectorAll("textarea#ModelPrice").length,
+      inPanelCount: panel ? panel.querySelectorAll("textarea#ModelPrice").length : 0,
+    };
+  });
+
+const modelReady = await ensurePanelTargetVisible({
+  tabSel: "#semiTabmodel",
+  panelSel: "#semiTabPanelmodel",
+  targetSel: "textarea#ModelPrice",
+  fallbackTabSel: "#semiTabgroup",
+});
+
+if (!modelReady) {
+  const dbg = await collectModelDebug();
+  throw new Error(`ensurePanelTargetVisible(model) failed DBG=${JSON.stringify(dbg)}`);
+}
+
+try {
+  await shot("pricing_model_modelprice", '#semiTabPanelmodel[aria-hidden="false"] textarea#ModelPrice');
+} catch (e) {
+  const dbg = await collectModelDebug();
+  const msg = e && typeof e === "object" && "message" in e ? String(e.message) : String(e);
+  throw new Error(`pricing_model_modelprice shot failed: ${msg} DBG=${JSON.stringify(dbg)}`);
+}
+await shot("pricing_model_save", '[data-pw-target="pricing-model-save"]');
+await shot("pricing_model_reset", '[data-pw-target="pricing-model-reset"]');
+await shot("pricing_model_switch", '[data-pw-target="pricing-model-switch"] [data-pw-knob="1"]');
+
+// Group tab
+await page.locator("#semiTabgroup").click();
+await page.waitForTimeout(350);
+await page.waitForFunction(() => {
+  const panel = document.querySelector("#semiTabPanelgroup");
+  if (!panel) return false;
+  if (panel.getAttribute("aria-hidden") !== "false") return false;
+  const textarea = panel.querySelector("textarea#GroupRatio");
+  if (!textarea) return false;
+  const style = window.getComputedStyle(textarea);
+  if (style.display === "none" || style.visibility === "hidden") return false;
+  const rect = textarea.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0;
+}, null, { timeout: 15000 });
+
+await page.evaluate(() => {
+  const normalize = (s) => String(s || "").replace(/\\s+/g, "");
+  const scope = document.querySelector('[data-pw-scope="pricing-scope"]') || document.body;
+  const panes = Array.from(scope.querySelectorAll(".semi-tabs-pane"));
+  const pane =
+    panes.find((el) => el.classList.contains("semi-tabs-pane-active")) ||
+    panes.find((el) => el.getAttribute("aria-hidden") === "false");
+  if (!pane) return;
+
+  const isVisible = (el) => {
+    if (!el) return false;
+    const style = window.getComputedStyle(el);
+    if (style.display === "none" || style.visibility === "hidden") return false;
+    const rect = el.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  };
+  const fields = Array.from(pane.querySelectorAll(".semi-form-field"));
+  const field =
+    fields.find((el) => {
+      const label = el.querySelector(".semi-form-field-label-text");
+      return label && normalize(label.textContent) === normalize("分组倍率");
+    }) || null;
+  const textarea = field ? Array.from(field.querySelectorAll("textarea")).find(isVisible) || field.querySelector("textarea") : null;
+  if (textarea) {
+    try { textarea.value = ""; } catch {}
+    textarea.style.width = "669px";
+    textarea.style.minWidth = "669px";
+    textarea.style.maxWidth = "669px";
+    textarea.style.boxSizing = "border-box";
+    textarea.style.overflow = "hidden";
+    textarea.style.resize = "none";
+    textarea.setAttribute("placeholder", "Placeholder");
+    textarea.setAttribute("data-pw-target", "pricing-group-groupratio");
+  }
+
+  const btns = Array.from(pane.querySelectorAll("button"));
+  const btnSave = btns.find((el) => (el.textContent || "").includes("保存分组倍率设置"));
+  if (btnSave) {
+    btnSave.setAttribute("data-pw-target", "pricing-group-save");
+    const content = btnSave.querySelector(".semi-button-content") || btnSave;
+    content.textContent = "Save";
+  }
+});
+await ensurePanelTargetVisible({
+  tabSel: "#semiTabgroup",
+  panelSel: "#semiTabPanelgroup",
+  targetSel: "textarea#GroupRatio",
+  fallbackTabSel: "#semiTabmodel",
+});
+await shot("pricing_group_groupratio", '#semiTabPanelgroup[aria-hidden="false"] textarea#GroupRatio');
+await shot("pricing_group_save", '[data-pw-target="pricing-group-save"]');
+
+// Visual tab
+await page.locator("#semiTabvisual").click();
+await page.waitForTimeout(350);
+await page.evaluate(() => {
+  const normalize = (s) => String(s || "").replace(/\s+/g, "");
+  const scope = document.querySelector('[data-pw-scope="pricing-scope"]') || document.body;
+  const pane =
+    Array.from(scope.querySelectorAll(".semi-tabs-pane")).find(
+      (el) => el.classList.contains("semi-tabs-pane-active") || el.getAttribute("aria-hidden") === "false"
+    ) ||
+    scope.querySelector(".semi-tabs-pane-active") ||
+    scope;
+
+  const btns = Array.from(pane.querySelectorAll("button"));
+  const btnAdd = btns.find((el) => normalize(el.textContent).includes(normalize("添加模型")));
+  if (btnAdd) {
+    btnAdd.setAttribute("data-pw-target", "pricing-visual-add");
+    const content = btnAdd.querySelector(".semi-button-content") || btnAdd;
+    content.textContent = "Add";
+  }
+  const btnApply = btns.find((el) => normalize(el.textContent).includes(normalize("应用更改")));
+  if (btnApply) {
+    btnApply.setAttribute("data-pw-target", "pricing-visual-apply");
+    const content = btnApply.querySelector(".semi-button-content") || btnApply;
+    content.textContent = "Apply";
+  }
+
+  const search = pane.querySelector('input[placeholder*="搜索模型名称"]');
+  const searchWrap = search ? search.closest(".semi-input-wrapper") : null;
+  if (searchWrap && search) {
+    searchWrap.setAttribute("data-pw-target", "pricing-visual-search");
+    search.value = "";
+    search.setAttribute("placeholder", "Placeholder");
+  }
+
+  const checkbox = Array.from(pane.querySelectorAll("label,span")).find((el) =>
+    normalize(el.textContent).includes(normalize("仅显示矛盾倍率")),
+  );
+  const cbWrap = checkbox ? checkbox.closest(".semi-checkbox") : null;
+  if (cbWrap) {
+    cbWrap.setAttribute("data-pw-target", "pricing-visual-conflict");
+    if (checkbox) checkbox.textContent = "Checkbox";
+  }
+});
+await shot("pricing_visual_add", '[data-pw-target="pricing-visual-add"]');
+await shot("pricing_visual_apply", '[data-pw-target="pricing-visual-apply"]');
+await shot("pricing_visual_search", '[data-pw-target="pricing-visual-search"]');
+await shot("pricing_visual_conflict", '[data-pw-target="pricing-visual-conflict"]');
+
+// Unset models tab
+await page.locator("#semiTabunset_models").click();
+await page.waitForTimeout(350);
+await page.evaluate(() => {
+  const normalize = (s) => String(s || "").replace(/\s+/g, "");
+  const scope = document.querySelector('[data-pw-scope="pricing-scope"]') || document.body;
+  const pane =
+    Array.from(scope.querySelectorAll(".semi-tabs-pane")).find(
+      (el) => el.classList.contains("semi-tabs-pane-active") || el.getAttribute("aria-hidden") === "false"
+    ) ||
+    scope.querySelector(".semi-tabs-pane-active") ||
+    scope;
+
+  const btns = Array.from(pane.querySelectorAll("button"));
+  const btnAdd = btns.find((el) => normalize(el.textContent).includes(normalize("添加模型")));
+  if (btnAdd) {
+    btnAdd.setAttribute("data-pw-target", "pricing-unset-add");
+    const content = btnAdd.querySelector(".semi-button-content") || btnAdd;
+    content.textContent = "Add";
+  }
+  const btnBatch = btns.find((el) => normalize(el.textContent).includes(normalize("批量设置")));
+  if (btnBatch) {
+    btnBatch.setAttribute("data-pw-target", "pricing-unset-batch");
+    const content = btnBatch.querySelector(".semi-button-content") || btnBatch;
+    content.textContent = "Batch (0)";
+  }
+  const btnApply = btns.find((el) => normalize(el.textContent).includes(normalize("应用更改")));
+  if (btnApply) {
+    btnApply.setAttribute("data-pw-target", "pricing-unset-apply");
+    const content = btnApply.querySelector(".semi-button-content") || btnApply;
+    content.textContent = "Apply";
+  }
+
+  const search = pane.querySelector('input[placeholder*="搜索模型名称"]');
+  const searchWrap = search ? search.closest(".semi-input-wrapper") : null;
+  if (searchWrap && search) {
+    searchWrap.setAttribute("data-pw-target", "pricing-unset-search");
+    search.value = "";
+    search.setAttribute("placeholder", "Placeholder");
+  }
+});
+await shot("pricing_unset_add", '[data-pw-target="pricing-unset-add"]');
+await shot("pricing_unset_batch", '[data-pw-target="pricing-unset-batch"]');
+await shot("pricing_unset_apply", '[data-pw-target="pricing-unset-apply"]');
+await shot("pricing_unset_search", '[data-pw-target="pricing-unset-search"]');
+
+// Upstream sync tab
+await page.locator("#semiTabupstream_sync").click();
+await page.waitForTimeout(450);
+await page.evaluate(() => {
+  const normalize = (s) => String(s || "").replace(/\s+/g, "");
+  const scope = document.querySelector('[data-pw-scope="pricing-scope"]') || document.body;
+  const pane =
+    Array.from(scope.querySelectorAll(".semi-tabs-pane")).find(
+      (el) => el.classList.contains("semi-tabs-pane-active") || el.getAttribute("aria-hidden") === "false"
+    ) ||
+    scope.querySelector(".semi-tabs-pane-active") ||
+    scope;
+
+  const btns = Array.from(pane.querySelectorAll("button"));
+  const btnSelect = btns.find((el) => normalize(el.textContent).includes(normalize("选择同步渠道")));
+  if (btnSelect) {
+    btnSelect.setAttribute("data-pw-target", "pricing-upstream-select");
+    const content = btnSelect.querySelector(".semi-button-content") || btnSelect;
+    content.textContent = "Select";
+  }
+  const btnApply = btns.find((el) => normalize(el.textContent).includes(normalize("应用同步")));
+  if (btnApply) {
+    btnApply.setAttribute("data-pw-target", "pricing-upstream-apply");
+    const content = btnApply.querySelector(".semi-button-content") || btnApply;
+    content.textContent = "Apply";
+  }
+
+  const search = pane.querySelector('input[placeholder*="搜索模型名称"]');
+  const searchWrap = search ? search.closest(".semi-input-wrapper") : null;
+  if (searchWrap && search) {
+    searchWrap.setAttribute("data-pw-target", "pricing-upstream-search");
+    search.value = "";
+    search.setAttribute("placeholder", "Placeholder");
+    searchWrap.style.width = "257px";
+    searchWrap.style.minWidth = "257px";
+    searchWrap.style.maxWidth = "257px";
+    searchWrap.style.flex = "0 0 257px";
+    searchWrap.style.boxSizing = "border-box";
+  }
+
+  const select = pane.querySelector(".semi-select");
+  if (select) {
+    select.setAttribute("data-pw-target", "pricing-upstream-filter");
+    const txt =
+      select.querySelector(".semi-select-selection-text") ||
+      select.querySelector(".semi-select-selection-placeholder");
+    if (txt) txt.textContent = "Option";
+    select.style.width = "193px";
+    select.style.minWidth = "193px";
+    select.style.maxWidth = "193px";
+    select.style.flex = "0 0 193px";
+    select.style.boxSizing = "border-box";
+  }
+
+  const emptyDesc = pane.querySelector(".semi-empty-description") || pane.querySelector(".semi-empty");
+  if (emptyDesc) {
+    emptyDesc.setAttribute("data-pw-target", "pricing-upstream-empty");
+    if (emptyDesc.classList.contains("semi-empty-description")) {
+      emptyDesc.textContent = "Empty";
+    }
+  }
+});
+await shot("pricing_upstream_select", '[data-pw-target="pricing-upstream-select"]');
+await shot("pricing_upstream_apply", '[data-pw-target="pricing-upstream-apply"]');
+await shot("pricing_upstream_search", '[data-pw-target="pricing-upstream-search"]');
+await shot("pricing_upstream_filter", '[data-pw-target="pricing-upstream-filter"]');
+await shot("pricing_upstream_empty", '[data-pw-target="pricing-upstream-empty"]');
+
+return { ok: true };
+}

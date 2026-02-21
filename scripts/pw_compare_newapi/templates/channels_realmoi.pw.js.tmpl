@@ -1,0 +1,522 @@
+async (page) => {
+const label = "__LABEL__";
+const url = "__URL__";
+const apiBase = "__API_BASE__".replace(/\/$/, "");
+
+const corsHeaders = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
+  "access-control-allow-headers": "*",
+  "access-control-max-age": "600",
+};
+
+const me = { id: "u_admin", username: "root", role: "admin", is_disabled: false };
+const channelsPayload = [
+  { channel: "", display_name: "default", base_url: "https://api.example.com", api_key_masked: "sk-****", has_api_key: true, models_path: "/v1/models", is_default: true, is_enabled: true, source: "env" },
+  { channel: "openai-cn", display_name: "OpenAI 中国", base_url: "https://openai.example.com", api_key_masked: "sk-****", has_api_key: true, models_path: "/v1/models", is_default: false, is_enabled: true, source: "config" },
+];
+
+const modelsPayload = {
+  data: [
+    { id: "gpt-4o" },
+    { id: "gpt-4o-mini" },
+    { id: "claude-3-5-sonnet" },
+  ],
+};
+
+await page.route(`${apiBase}/**`, async (route) => {
+  const req = route.request();
+  const requestUrl = req.url();
+  if (req.method() === "OPTIONS") {
+    await route.fulfill({ status: 204, headers: corsHeaders, body: "" });
+    return;
+  }
+
+  if (requestUrl === `${apiBase}/auth/me`) {
+    await route.fulfill({
+      status: 200,
+      headers: { "content-type": "application/json; charset=utf-8", ...corsHeaders },
+      body: JSON.stringify(me),
+    });
+    return;
+  }
+
+  if (requestUrl === `${apiBase}/admin/upstream/channels`) {
+    await route.fulfill({
+      status: 200,
+      headers: { "content-type": "application/json; charset=utf-8", ...corsHeaders },
+      body: JSON.stringify(channelsPayload),
+    });
+    return;
+  }
+
+  if (requestUrl.startsWith(`${apiBase}/admin/upstream/models`)) {
+    await route.fulfill({
+      status: 200,
+      headers: { "content-type": "application/json; charset=utf-8", ...corsHeaders },
+      body: JSON.stringify(modelsPayload),
+    });
+    return;
+  }
+
+  await route.continue();
+});
+
+await page.addInitScript(() => {
+  try { localStorage.setItem("realmoi_token", "test-token"); } catch {}
+});
+
+await page.goto(url, { waitUntil: "domcontentloaded" });
+await page.waitForTimeout(900);
+
+await page.addStyleTag({
+  content: `
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+    .semi-toast, .semi-toast-wrapper, .semi-notification, .semi-notification-list { display: none !important; }
+  `,
+});
+
+await page.evaluate(() => {
+  const normalize = (s) => String(s || "").replace(/\s+/g, "");
+  const main = document.querySelector("main.newapi-scope") || document.querySelector("main");
+  if (!main) return;
+
+  const tabEl =
+    main.querySelector('[role="tab"]') ||
+    main.querySelector('.semi-tabs-tab-button') ||
+    main.querySelector('.semi-tabs-tab') ||
+    null;
+  if (tabEl) {
+    tabEl.setAttribute('data-pw-target', 'channels-tab');
+    tabEl.textContent = 'Tab';
+  }
+
+  const keywordInput = main.querySelector('input[placeholder*="渠道ID"]');
+  const keywordWrap = keywordInput ? keywordInput.closest(".semi-input-wrapper") : null;
+  if (keywordWrap && keywordInput) {
+    keywordWrap.setAttribute("data-pw-target", "channels-search-keyword");
+    keywordInput.value = "";
+    keywordInput.setAttribute("placeholder", "Placeholder");
+  }
+
+  const modelInput = main.querySelector('input[placeholder*="模型关键字"]');
+  const modelWrap = modelInput ? modelInput.closest(".semi-input-wrapper") : null;
+  if (modelWrap && modelInput) {
+    modelWrap.setAttribute("data-pw-target", "channels-search-model");
+    modelInput.value = "";
+    modelInput.setAttribute("placeholder", "Placeholder");
+  }
+
+  const groupSelect = main.querySelector("form .semi-select");
+  if (groupSelect) {
+    groupSelect.setAttribute("data-pw-target", "channels-group-select");
+    const txt =
+      groupSelect.querySelector(".semi-select-selection-text") ||
+      groupSelect.querySelector(".semi-select-selection-placeholder");
+    if (txt) txt.textContent = "Option";
+  }
+
+  const btnAdd = Array.from(main.querySelectorAll("button")).find(
+    (el) => normalize(el.textContent) === normalize("添加渠道"),
+  );
+  if (btnAdd) {
+    btnAdd.setAttribute("data-pw-target", "channels-btn-add");
+    const content = btnAdd.querySelector(".semi-button-content") || btnAdd;
+    content.textContent = "Primary";
+  }
+
+  const btnRefresh = Array.from(main.querySelectorAll("button")).find(
+    (el) => normalize(el.textContent) === normalize("刷新"),
+  );
+  if (btnRefresh) {
+    btnRefresh.setAttribute("data-pw-target", "channels-btn-refresh");
+    const content = btnRefresh.querySelector(".semi-button-content") || btnRefresh;
+    content.textContent = "Refresh";
+  }
+
+  const btnQuery = Array.from(main.querySelectorAll("button")).find(
+    (el) => normalize(el.textContent) === normalize("查询"),
+  );
+  if (btnQuery) {
+    btnQuery.setAttribute("data-pw-target", "channels-btn-query");
+    const content = btnQuery.querySelector(".semi-button-content") || btnQuery;
+    content.textContent = "Query";
+  }
+
+  const btnReset = Array.from(main.querySelectorAll("button")).find(
+    (el) => normalize(el.textContent) === normalize("重置"),
+  );
+  if (btnReset) {
+    btnReset.setAttribute("data-pw-target", "channels-btn-reset");
+    const content = btnReset.querySelector(".semi-button-content") || btnReset;
+    content.textContent = "Reset";
+  }
+
+	  const statusLabel = Array.from(main.querySelectorAll("span,div,p")).find((el) =>
+	    normalize(el.textContent).includes(normalize("状态筛选")),
+	  );
+	  const statusSelect =
+	    (statusLabel ? statusLabel.parentElement?.querySelector(".semi-select") : null) || null;
+	  if (statusSelect) {
+	    statusSelect.setAttribute("data-pw-target", "channels-actions-select");
+	    const txt =
+	      statusSelect.querySelector(".semi-select-selection-text") ||
+	      statusSelect.querySelector(".semi-select-selection-placeholder");
+	    if (txt) txt.textContent = "Option";
+	  }
+	
+	  const idSortLabel = Array.from(main.querySelectorAll("span,div,p")).find((el) =>
+	    normalize(el.textContent).includes(normalize("使用ID排序")),
+	  );
+	  const idSortSwitch =
+	    (idSortLabel ? idSortLabel.parentElement?.querySelector(".semi-switch") : null) || null;
+	  if (idSortSwitch) {
+	    idSortSwitch.setAttribute("data-pw-target", "channels-actions-switch");
+	  }
+
+  const th = main.querySelector(".semi-table-thead th") || main.querySelector("thead th");
+  if (th) {
+    th.setAttribute("data-pw-target", "channels-th");
+    th.textContent = "Header";
+  }
+});
+
+await page.addStyleTag({
+  content: `
+    [data-pw-target="channels-tab"] { width: 140px !important; }
+    [data-pw-target="channels-search-keyword"] { width: 256px !important; }
+    [data-pw-target="channels-search-model"] { width: 192px !important; }
+    [data-pw-target="channels-group-select"] { width: 128px !important; }
+    [data-pw-target="channels-btn-add"] { width: 120px !important; justify-content: center !important; }
+    [data-pw-target="channels-btn-refresh"] { width: 120px !important; justify-content: center !important; }
+    [data-pw-target="channels-btn-query"] { width: 108px !important; justify-content: center !important; }
+    [data-pw-target="channels-btn-reset"] { width: 108px !important; justify-content: center !important; }
+	  `,
+	});
+
+await page.evaluate(async () => {
+  if (!document.fonts || !document.fonts.ready) return;
+  try { await document.fonts.ready; } catch {}
+});
+await page.waitForTimeout(200);
+
+await page.evaluate(() => {
+  const stripLoading = (sel) => {
+    const btn = document.querySelector(sel);
+    if (!btn) return;
+    btn.classList.remove("semi-button-loading", "semi-button-with-icon");
+    btn.removeAttribute("aria-busy");
+    btn.querySelectorAll(".semi-button-icon, .semi-spin, .semi-button-spinner").forEach((n) => {
+      try {
+        n.remove();
+      } catch {}
+    });
+  };
+  stripLoading('[data-pw-target="channels-btn-query"]');
+  stripLoading('[data-pw-target="channels-btn-refresh"]');
+});
+
+await page.evaluate(() => {
+  const el = document.activeElement;
+  if (el && typeof el.blur === "function") el.blur();
+
+  let sink = document.getElementById("__pw_hover_sink");
+  if (!sink) {
+    sink = document.createElement("div");
+    sink.id = "__pw_hover_sink";
+    sink.style.position = "fixed";
+    sink.style.left = "0";
+    sink.style.top = "0";
+    sink.style.width = "24px";
+    sink.style.height = "24px";
+    sink.style.zIndex = "2147483647";
+    sink.style.background = "transparent";
+    sink.style.pointerEvents = "auto";
+    document.body.appendChild(sink);
+  }
+});
+await page.mouse.move(12, 12);
+
+// Under CPU load, headless paint can lag behind DOM mutations; give it a moment to settle.
+await page.waitForTimeout(800);
+
+const targets = [
+  ["channels_tab", '[data-pw-target="channels-tab"]'],
+  ["channels_btn_add", '[data-pw-target="channels-btn-add"]'],
+  ["channels_btn_refresh", '[data-pw-target="channels-btn-refresh"]'],
+  ["channels_search_keyword", '[data-pw-target="channels-search-keyword"]'],
+  ["channels_search_model", '[data-pw-target="channels-search-model"]'],
+  ["channels_group_select", '[data-pw-target="channels-group-select"]'],
+  ["channels_btn_query", '[data-pw-target="channels-btn-query"]'],
+  ["channels_btn_reset", '[data-pw-target="channels-btn-reset"]'],
+  ["channels_actions_select", '[data-pw-target="channels-actions-select"]'],
+  ["channels_actions_switch", '[data-pw-target="channels-actions-switch"]'],
+  ["channels_th", '[data-pw-target="channels-th"]'],
+];
+
+const moveStageKeySet = new Set([]);
+const cloneStageKeySet = new Set(["channels_th"]);
+
+const ensureStage = async (page) => {
+  await page.evaluate(() => {
+    let stage = document.getElementById("__pw_stage");
+    if (stage) return;
+    stage = document.createElement("div");
+    stage.id = "__pw_stage";
+    stage.className = "newapi-scope";
+    stage.style.position = "fixed";
+    stage.style.left = "0";
+    stage.style.top = "0";
+    stage.style.zIndex = "2147483647";
+    stage.style.padding = "0";
+    stage.style.margin = "0";
+    stage.style.background = "transparent";
+    stage.style.display = "inline-block";
+    document.body.appendChild(stage);
+  });
+};
+
+const moveToStage = async (page, loc, stageKey) => {
+  await ensureStage(page);
+  await loc.evaluate((el, key) => {
+    const stage = document.getElementById("__pw_stage");
+    if (!stage) return;
+    stage.innerHTML = "";
+
+    const marker = document.createElement("span");
+    marker.setAttribute("data-pw-marker", key);
+    marker.style.display = "none";
+    el.parentNode?.insertBefore(marker, el);
+
+    el.setAttribute("data-pw-stage", key);
+    stage.appendChild(el);
+  }, stageKey);
+};
+
+const restoreFromStage = async (page, stageKey) => {
+  await page.evaluate((key) => {
+    const stage = document.getElementById("__pw_stage");
+    const el = document.querySelector(`[data-pw-stage="${key}"]`);
+    const marker = document.querySelector(`[data-pw-marker="${key}"]`);
+    if (el && marker && marker.parentNode) {
+      marker.parentNode.insertBefore(el, marker);
+      marker.remove();
+    }
+    if (el) el.removeAttribute("data-pw-stage");
+    if (stage) stage.innerHTML = "";
+  }, stageKey);
+};
+
+const cloneTableCellToStage = async (page, loc, stageKey) => {
+  await ensureStage(page);
+  await loc.evaluate((el, key) => {
+    const stage = document.getElementById("__pw_stage");
+    if (!stage) return;
+    stage.innerHTML = "";
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "semi-table";
+    wrapper.style.display = "inline-block";
+    wrapper.style.background = "transparent";
+
+    const table = document.createElement("table");
+    table.style.borderCollapse = "separate";
+    table.style.borderSpacing = "0";
+    table.style.background = "transparent";
+
+    const thead = document.createElement("thead");
+    thead.className = "semi-table-thead";
+    const tr = document.createElement("tr");
+    tr.className = "semi-table-row";
+
+    const clone = el.cloneNode(true);
+    clone.setAttribute("data-pw-stage", key);
+    tr.appendChild(clone);
+    thead.appendChild(tr);
+    table.appendChild(thead);
+    wrapper.appendChild(table);
+    stage.appendChild(wrapper);
+  }, stageKey);
+};
+
+const clearStage = async (page) => {
+  await page.evaluate(() => {
+    const stage = document.getElementById("__pw_stage");
+    if (stage) stage.innerHTML = "";
+  });
+};
+
+const stableShot = async (page, loc, path) => {
+  await loc.waitFor({ state: "visible", timeout: 15000 });
+  await loc.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(120);
+  await loc.screenshot({ path });
+  await page.waitForTimeout(200);
+  await loc.screenshot({ path });
+};
+
+for (const [name, sel] of targets) {
+  const loc = page.locator(sel).first();
+  const p = `${label}_${name}.png`;
+  if (moveStageKeySet.has(name)) {
+    await moveToStage(page, loc, name);
+    const staged = page.locator(`[data-pw-stage="${name}"]`).first();
+    await stableShot(page, staged, p);
+    await restoreFromStage(page, name);
+    continue;
+  }
+  if (cloneStageKeySet.has(name)) {
+    await cloneTableCellToStage(page, loc, name);
+    const staged = page.locator(`[data-pw-stage="${name}"]`).first();
+    await stableShot(page, staged, p);
+    await clearStage(page);
+    continue;
+  }
+  await stableShot(page, loc, p);
+}
+
+const semiVars = await page.evaluate(() => {
+  const host = document.body || document.documentElement;
+  const cs = host ? getComputedStyle(host) : null;
+  const getVar = (name) => (cs ? (cs.getPropertyValue(name) || "").trim() : "");
+  return {
+    fill0: getVar("--semi-color-fill-0"),
+    fill1: getVar("--semi-color-fill-1"),
+    fill2: getVar("--semi-color-fill-2"),
+    bg0: getVar("--semi-color-bg-0"),
+    bg1: getVar("--semi-color-bg-1"),
+    border: getVar("--semi-color-border"),
+    text0: getVar("--semi-color-text-0"),
+    text1: getVar("--semi-color-text-1"),
+    text2: getVar("--semi-color-text-2"),
+    tertiary: getVar("--semi-color-tertiary"),
+  };
+});
+
+const dump = await page.evaluate(() => {
+  const pick = (key) => {
+    const el = document.querySelector(`[data-pw-target="${key}"]`);
+    if (!el) return null;
+    const rect = el.getBoundingClientRect();
+    let html = "";
+    try {
+      html = (el.outerHTML || "").slice(0, 600);
+    } catch {
+      html = "";
+    }
+
+    const pickInner = () => {
+      const node =
+        el.querySelector(".semi-select-selection-text") ||
+        el.querySelector(".semi-select-selection-placeholder") ||
+        el.querySelector(".semi-button-content") ||
+        null;
+      if (!node) return null;
+      const cs = getComputedStyle(node);
+      return {
+        tagName: node.tagName || null,
+        className: (node.className || null),
+        text: (node.textContent || "").slice(0, 80),
+        style: {
+          fontFamily: cs.fontFamily,
+          fontSize: cs.fontSize,
+          fontWeight: cs.fontWeight,
+          lineHeight: cs.lineHeight,
+          letterSpacing: cs.letterSpacing,
+          color: cs.color,
+          webkitFontSmoothing: cs.getPropertyValue("-webkit-font-smoothing"),
+          mozOsxFontSmoothing: cs.getPropertyValue("-moz-osx-font-smoothing"),
+          textRendering: cs.textRendering,
+        },
+      };
+    };
+
+    const pickSwitchKnob = () => {
+      const knob = el.querySelector(".semi-switch-knob");
+      if (!knob) return null;
+      const cs = getComputedStyle(knob);
+      const r = knob.getBoundingClientRect();
+      return {
+        rect: {
+          x: r.x,
+          y: r.y,
+          width: r.width,
+          height: r.height,
+        },
+        style: {
+          backgroundColor: cs.backgroundColor,
+          borderRadius: cs.borderRadius,
+          transform: cs.transform,
+        },
+      };
+    };
+
+    return {
+      tagName: el.tagName || null,
+      className: (el.className || null),
+      rect: {
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
+      },
+      style: (() => {
+        const cs = getComputedStyle(el);
+        return {
+          display: cs.display,
+          width: cs.width,
+          height: cs.height,
+          padding: cs.padding,
+          backgroundColor: cs.backgroundColor,
+          color: cs.color,
+          fontFamily: cs.fontFamily,
+          fontSize: cs.fontSize,
+          fontWeight: cs.fontWeight,
+          lineHeight: cs.lineHeight,
+          letterSpacing: cs.letterSpacing,
+          webkitFontSmoothing: cs.getPropertyValue("-webkit-font-smoothing"),
+          mozOsxFontSmoothing: cs.getPropertyValue("-moz-osx-font-smoothing"),
+          textRendering: cs.textRendering,
+          zoom: cs.getPropertyValue("zoom"),
+          borderTop: `${cs.borderTopWidth} ${cs.borderTopStyle} ${cs.borderTopColor}`,
+          borderRight: `${cs.borderRightWidth} ${cs.borderRightStyle} ${cs.borderRightColor}`,
+          borderBottom: `${cs.borderBottomWidth} ${cs.borderBottomStyle} ${cs.borderBottomColor}`,
+          borderLeft: `${cs.borderLeftWidth} ${cs.borderLeftStyle} ${cs.borderLeftColor}`,
+          borderRadius: cs.borderRadius,
+          boxShadow: cs.boxShadow,
+          transform: cs.transform,
+          opacity: cs.opacity,
+        };
+      })(),
+      inner: pickInner(),
+      switchKnob: pickSwitchKnob(),
+      html,
+    };
+  };
+
+  return {
+    env: (() => {
+      const doc = document.documentElement;
+      const body = document.body;
+      const dcs = doc ? getComputedStyle(doc) : null;
+      const bcs = body ? getComputedStyle(body) : null;
+      return {
+        dpr: window.devicePixelRatio,
+        docFontSize: dcs ? dcs.fontSize : null,
+        docZoom: dcs ? dcs.getPropertyValue("zoom") : null,
+        bodyFontSize: bcs ? bcs.fontSize : null,
+        bodyZoom: bcs ? bcs.getPropertyValue("zoom") : null,
+      };
+    })(),
+    keyword: pick("channels-search-keyword"),
+    queryBtn: pick("channels-btn-query"),
+    resetBtn: pick("channels-btn-reset"),
+    refreshBtn: pick("channels-btn-refresh"),
+    actionsSelect: pick("channels-actions-select"),
+    actionsSwitch: pick("channels-actions-switch"),
+    th: pick("channels-th"),
+  };
+});
+
+return { ok: true, semiVars, dump };
+}

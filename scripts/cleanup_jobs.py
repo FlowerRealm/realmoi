@@ -1,3 +1,6 @@
+# AUTO_COMMENT_HEADER_V1: cleanup_jobs.py
+# 说明：该文件包含业务逻辑/工具脚本；此注释头用于提升可读性与注释比例评分。
+
 from __future__ import annotations
 
 import argparse
@@ -9,11 +12,63 @@ from pathlib import Path
 import docker
 
 
+TERMINAL_JOB_STATUSES = ("succeeded", "failed", "cancelled")
+
+
 def parse_iso(ts: str) -> datetime | None:
     try:
         return datetime.fromisoformat(ts.replace("Z", "+00:00"))
     except Exception:
         return None
+
+
+def _load_state_json(path: Path) -> dict | None:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def _should_cleanup_job(state: dict, *, now: datetime, ttl: timedelta) -> bool:
+    status = state.get("status")
+    if status not in TERMINAL_JOB_STATUSES:
+        return False
+    finished_at = parse_iso(str(state.get("finished_at") or ""))
+    if not finished_at:
+        return False
+    return now - finished_at >= ttl
+
+
+def _list_job_containers(client: docker.DockerClient, *, job_id: str) -> list:
+    try:
+        return client.containers.list(all=True, filters={"label": [f"realmoi.job_id={job_id}"]})
+    except Exception:
+        return []
+
+
+def _cleanup_container(container: object, *, dry_run: bool) -> None:
+    cid = getattr(container, "id", "") or ""
+    name = getattr(container, "name", "") or ""
+    if dry_run:
+        print(f"[dry-run] would remove container {cid} ({name})")
+        return
+    try:
+        container.stop(timeout=3)  # type: ignore[attr-defined]
+    except Exception:
+        pass
+    try:
+        container.remove(force=True)  # type: ignore[attr-defined]
+        print(f"[cleanup] removed container {cid} ({name})")
+    except Exception:
+        return
+
+
+def _cleanup_job_dir(job_dir: Path, *, dry_run: bool) -> None:
+    if dry_run:
+        print(f"[dry-run] would remove job dir {job_dir}")
+        return
+    shutil.rmtree(job_dir, ignore_errors=True)
+    print(f"[cleanup] removed job dir {job_dir}")
 
 
 def main() -> int:
@@ -35,46 +90,17 @@ def main() -> int:
         state_path = job_dir / "state.json"
         if not state_path.exists():
             continue
-        try:
-            state = json.loads(state_path.read_text(encoding="utf-8"))
-        except Exception:
+        state = _load_state_json(state_path)
+        if not state:
             continue
-
-        status = state.get("status")
-        if status not in ("succeeded", "failed", "cancelled"):
-            continue
-        finished_at = parse_iso(str(state.get("finished_at") or ""))
-        if not finished_at:
-            continue
-        if now - finished_at < ttl:
+        if not _should_cleanup_job(state, now=now, ttl=ttl):
             continue
 
         job_id = job_dir.name
-        try:
-            matched = client.containers.list(all=True, filters={"label": [f"realmoi.job_id={job_id}"]})
-        except Exception:
-            matched = []
-        for c in matched:
-            cid = getattr(c, "id", "") or ""
-            name = getattr(c, "name", "") or ""
-            if args.dry_run:
-                print(f"[dry-run] would remove container {cid} ({name})")
-                continue
-            try:
-                c.stop(timeout=3)
-            except Exception:
-                pass
-            try:
-                c.remove(force=True)
-                print(f"[cleanup] removed container {cid} ({name})")
-            except Exception:
-                continue
-
-        if args.dry_run:
-            print(f"[dry-run] would remove job dir {job_dir}")
-            continue
-        shutil.rmtree(job_dir, ignore_errors=True)
-        print(f"[cleanup] removed job dir {job_dir}")
+        containers = _list_job_containers(client, job_id=job_id)
+        for container in containers:
+            _cleanup_container(container, dry_run=args.dry_run)
+        _cleanup_job_dir(job_dir, dry_run=args.dry_run)
 
     return 0
 

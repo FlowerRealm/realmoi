@@ -1,0 +1,68 @@
+[
+  {
+    "label": "channels_tab",
+    "a": "realmoi_channels_tab.png",
+    "b": "newapi_channels_tab.png",
+    "out": "diff_channels_tab.png"
+  },
+  {
+    "label": "channels_btn_add",
+    "a": "realmoi_channels_btn_add.png",
+    "b": "newapi_channels_btn_add.png",
+    "out": "diff_channels_btn_add.png"
+  },
+  {
+    "label": "channels_btn_refresh",
+    "a": "realmoi_channels_btn_refresh.png",
+    "b": "newapi_channels_btn_refresh.png",
+    "out": "diff_channels_btn_refresh.png"
+  },
+  {
+    "label": "channels_search_keyword",
+    "a": "realmoi_channels_search_keyword.png",
+    "b": "newapi_channels_search_keyword.png",
+    "out": "diff_channels_search_keyword.png"
+  },
+  {
+    "label": "channels_search_model",
+    "a": "realmoi_channels_search_model.png",
+    "b": "newapi_channels_search_model.png",
+    "out": "diff_channels_search_model.png"
+  },
+  {
+    "label": "channels_group_select",
+    "a": "realmoi_channels_group_select.png",
+    "b": "newapi_channels_group_select.png",
+    "out": "diff_channels_group_select.png"
+  },
+  {
+    "label": "channels_btn_query",
+    "a": "realmoi_channels_btn_query.png",
+    "b": "newapi_channels_btn_query.png",
+    "out": "diff_channels_btn_query.png"
+  },
+  {
+    "label": "channels_btn_reset",
+    "a": "realmoi_channels_btn_reset.png",
+    "b": "newapi_channels_btn_reset.png",
+    "out": "diff_channels_btn_reset.png"
+  },
+  {
+    "label": "channels_actions_select",
+    "a": "realmoi_channels_actions_select.png",
+    "b": "newapi_channels_actions_select.png",
+    "out": "diff_channels_actions_select.png"
+  },
+  {
+    "label": "channels_actions_switch",
+    "a": "realmoi_channels_actions_switch.png",
+    "b": "newapi_channels_actions_switch.png",
+    "out": "diff_channels_actions_switch.png"
+  },
+  {
+    "label": "channels_th",
+    "a": "realmoi_channels_th.png",
+    "b": "newapi_channels_th.png",
+    "out": "diff_channels_th.png"
+  }
+]

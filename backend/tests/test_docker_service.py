@@ -1,40 +1,44 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, field
+from types import SimpleNamespace
+
 from docker.errors import ImageNotFound
 
 from backend.app.services import docker_service
 
 
-class _FakeImages:
-    def __init__(self, existing: set[str] | None = None) -> None:
-        self.existing = set(existing or set())
-        self.get_calls: list[str] = []
-        self.pull_calls: list[str] = []
+@dataclass
+class FakeImages:
+    existing: set[str] = field(default_factory=set)
+    get_calls: list[str] = field(default_factory=list)
+    pull_calls: list[str] = field(default_factory=list)
 
-    def get(self, image: str) -> object:
+    def get_image(self, image: str) -> object:
         self.get_calls.append(image)
         if image in self.existing:
             return object()
         raise ImageNotFound("not found")
+
+    get = get_image
 
     def pull(self, image: str) -> object:
         self.pull_calls.append(image)
         self.existing.add(image)
         return object()
 
-
-class _FakeClient:
-    def __init__(self, existing: set[str] | None = None) -> None:
-        self.images = _FakeImages(existing)
+def make_client(*, existing: set[str] | None = None):
+    images = FakeImages(existing=set(existing or set()))
+    return SimpleNamespace(images=images)
 
 
 def setup_function() -> None:
-    docker_service._READY_IMAGES.clear()  # noqa: SLF001
+    _ = docker_service._READY_IMAGES.clear()  # noqa: SLF001
 
 
 def test_ensure_image_ready_pull_once() -> None:
     image = "demo/runner:latest"
-    client = _FakeClient()
+    client = make_client()
 
     docker_service.ensure_image_ready(client=client, image=image)
     docker_service.ensure_image_ready(client=client, image=image)
@@ -45,7 +49,7 @@ def test_ensure_image_ready_pull_once() -> None:
 
 def test_ensure_image_ready_uses_local_image() -> None:
     image = "demo/runner:local"
-    client = _FakeClient(existing={image})
+    client = make_client(existing={image})
 
     docker_service.ensure_image_ready(client=client, image=image)
 

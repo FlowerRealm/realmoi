@@ -1,0 +1,62 @@
+[
+  {
+    "label": "register_card_topleft",
+    "a": "realmoi_register_card_topleft.png",
+    "b": "newapi_register_card_topleft.png",
+    "out": "diff_register_card_topleft.png"
+  },
+  {
+    "label": "register_card_topright",
+    "a": "realmoi_register_card_topright.png",
+    "b": "newapi_register_card_topright.png",
+    "out": "diff_register_card_topright.png"
+  },
+  {
+    "label": "register_card_bottomleft",
+    "a": "realmoi_register_card_bottomleft.png",
+    "b": "newapi_register_card_bottomleft.png",
+    "out": "diff_register_card_bottomleft.png"
+  },
+  {
+    "label": "register_card_bottomright",
+    "a": "realmoi_register_card_bottomright.png",
+    "b": "newapi_register_card_bottomright.png",
+    "out": "diff_register_card_bottomright.png"
+  },
+  {
+    "label": "register_title",
+    "a": "realmoi_register_title.png",
+    "b": "newapi_register_title.png",
+    "out": "diff_register_title.png"
+  },
+  {
+    "label": "register_username_wrapper",
+    "a": "realmoi_register_username_wrapper.png",
+    "b": "newapi_register_username_wrapper.png",
+    "out": "diff_register_username_wrapper.png"
+  },
+  {
+    "label": "register_password_wrapper",
+    "a": "realmoi_register_password_wrapper.png",
+    "b": "newapi_register_password_wrapper.png",
+    "out": "diff_register_password_wrapper.png"
+  },
+  {
+    "label": "register_password2_wrapper",
+    "a": "realmoi_register_password2_wrapper.png",
+    "b": "newapi_register_password2_wrapper.png",
+    "out": "diff_register_password2_wrapper.png"
+  },
+  {
+    "label": "register_btn_submit",
+    "a": "realmoi_register_btn_submit.png",
+    "b": "newapi_register_btn_submit.png",
+    "out": "diff_register_btn_submit.png"
+  },
+  {
+    "label": "register_footer",
+    "a": "realmoi_register_footer.png",
+    "b": "newapi_register_footer.png",
+    "out": "diff_register_footer.png"
+  }
+]

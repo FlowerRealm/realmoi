@@ -1,0 +1,286 @@
+async (page) => {
+const label = "__LABEL__";
+const url = "__URL__";
+const apiBase = "__API_BASE__".replace(/\/$/, "");
+
+const corsHeaders = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
+  "access-control-allow-headers": "*",
+  "access-control-max-age": "600",
+};
+
+const me = { id: "u_admin", username: "root", role: "admin", is_disabled: false };
+const usersPayload = {
+  items: [
+    { id: "u_1", username: "alice", role: "admin", is_disabled: false, created_at: "2025-01-01T00:00:00Z" },
+    { id: "u_2", username: "bob", role: "user", is_disabled: true, created_at: "2025-01-02T00:00:00Z" },
+    { id: "u_3", username: "charlie", role: "user", is_disabled: false, created_at: "2025-01-03T00:00:00Z" },
+  ],
+  total: 200,
+};
+
+try {
+  await page.unroute(`${apiBase}/**`);
+} catch {}
+
+await page.route(`${apiBase}/**`, async (route) => {
+  const req = route.request();
+  const requestUrl = req.url();
+  if (req.method() === "OPTIONS") {
+    await route.fulfill({ status: 204, headers: corsHeaders, body: "" });
+    return;
+  }
+
+  if (requestUrl === `${apiBase}/auth/me`) {
+    await route.fulfill({
+      status: 200,
+      headers: { "content-type": "application/json; charset=utf-8", ...corsHeaders },
+      body: JSON.stringify(me),
+    });
+    return;
+  }
+
+  if (requestUrl === `${apiBase}/admin/users` || requestUrl.startsWith(`${apiBase}/admin/users?`)) {
+    await route.fulfill({
+      status: 200,
+      headers: { "content-type": "application/json; charset=utf-8", ...corsHeaders },
+      body: JSON.stringify(usersPayload),
+    });
+    return;
+  }
+
+  await route.continue();
+});
+
+await page.addInitScript(() => {
+  try { localStorage.setItem("realmoi_token", "test-token"); } catch {}
+});
+
+await page.goto(url, { waitUntil: "domcontentloaded" });
+await page.waitForTimeout(800);
+
+await page.addStyleTag({
+  content: `
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  `,
+});
+
+await page.evaluate(() => {
+  const normalize = (s) => String(s || "").replace(/\\s+/g, "");
+  const main = document.querySelector("main.newapi-scope") || document.querySelector("main");
+  if (!main) return;
+
+  const searchInput =
+    main.querySelector('.semi-input-wrapper input[placeholder*="搜索"]') ||
+    main.querySelector('.semi-input-wrapper input') ||
+    main.querySelector('input[placeholder*="搜索"]') ||
+    main.querySelector("input");
+  const searchWrap = searchInput ? searchInput.closest(".semi-input-wrapper") : null;
+  if (searchInput && searchWrap) {
+    searchWrap.setAttribute("data-pw-target", "users-search");
+    searchInput.value = "";
+    searchInput.setAttribute("placeholder", "Placeholder");
+  }
+
+  const select = (searchWrap ? searchWrap.closest("form") : null)?.querySelector(".semi-select") || main.querySelector("form .semi-select") || main.querySelector(".semi-select");
+  if (select) {
+    select.setAttribute("data-pw-target", "users-select");
+    const txt =
+      select.querySelector(".semi-select-selection-text") ||
+      select.querySelector(".semi-select-selection-placeholder");
+    if (txt) txt.textContent = "Option";
+  }
+
+  const btnPrimary = Array.from(main.querySelectorAll("button")).find(
+    (el) => normalize(el.textContent) === normalize("添加用户"),
+  );
+  if (btnPrimary) {
+    btnPrimary.setAttribute("data-pw-target", "users-btn-primary");
+    const btnPrimaryContent = btnPrimary.querySelector(".semi-button-content") || btnPrimary;
+    btnPrimaryContent.textContent = "Action";
+  }
+
+  const btnSecondary = Array.from(main.querySelectorAll("button")).find(
+    (el) => normalize(el.textContent) === normalize("查询"),
+  );
+  if (btnSecondary) {
+    btnSecondary.setAttribute("data-pw-target", "users-btn-secondary");
+    const btnSecondaryContent = btnSecondary.querySelector(".semi-button-content") || btnSecondary;
+    btnSecondaryContent.textContent = "Secondary";
+  }
+
+  const tag = main.querySelector("tbody .semi-tag") || main.querySelector(".semi-tag");
+  if (tag) {
+    tag.setAttribute("data-pw-target", "users-tag");
+    const tagContent = tag.querySelector(".semi-tag-content") || tag;
+    tagContent.textContent = "Tag";
+  }
+
+  const th = main.querySelector(".semi-table-thead th") || main.querySelector("thead th");
+  if (th) {
+    th.setAttribute("data-pw-target", "users-th");
+    th.textContent = "Header";
+  }
+});
+
+await page.addStyleTag({
+  content: `
+    [data-pw-target="users-search"] { width: 360px !important; height: 32px !important; }
+    [data-pw-target="users-search"] input { height: 32px !important; line-height: 32px !important; }
+    [data-pw-target="users-select"] { width: 220px !important; height: 32px !important; }
+    [data-pw-target="users-btn-primary"] { width: 160px !important; height: 32px !important; justify-content: center !important; }
+    [data-pw-target="users-btn-secondary"] { width: 161px !important; height: 32px !important; justify-content: center !important; }
+    [data-pw-target="users-tag"] { width: 84px !important; height: 24px !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; }
+    [data-pw-target="users-th"] { width: 220px !important; height: 44px !important; vertical-align: middle !important; }
+  `,
+});
+
+await page.evaluate(async () => {
+  if (!document.fonts || !document.fonts.ready) return;
+  try { await document.fonts.ready; } catch {}
+});
+await page.waitForTimeout(200);
+
+const targets = [
+  ["users_search", '[data-pw-target="users-search"]'],
+  ["users_select", '[data-pw-target="users-select"]'],
+  ["users_btn_primary", '[data-pw-target="users-btn-primary"]'],
+  ["users_btn_secondary", '[data-pw-target="users-btn-secondary"]'],
+  ["users_tag", '[data-pw-target="users-tag"]'],
+  ["users_th", '[data-pw-target="users-th"]'],
+];
+
+for (const [name, sel] of targets) {
+  const loc = page.locator(sel).first();
+  await loc.waitFor({ state: "visible", timeout: 15000 });
+  await loc.scrollIntoViewIfNeeded();
+  if (name === "users_select") {
+    const box = await loc.boundingBox();
+    if (box) {
+      await page.screenshot({
+        path: `${label}_${name}.png`,
+        clip: {
+          x: Math.round(box.x),
+          y: Math.round(box.y),
+          width: 190,
+          height: 32,
+        },
+      });
+      continue;
+    }
+  }
+
+  if (name === "users_tag") {
+    const box = await loc.boundingBox();
+    if (box) {
+      await page.screenshot({
+        path: `${label}_${name}.png`,
+        clip: {
+          x: Math.round(box.x) + 3,
+          y: Math.round(box.y),
+          width: 78,
+          height: 24,
+        },
+      });
+      continue;
+    }
+  }
+
+  await loc.screenshot({ path: `${label}_${name}.png` });
+}
+
+const styles = await page.evaluate((targets) => {
+  const pick = (el) => {
+    const cs = window.getComputedStyle(el);
+    const r = el.getBoundingClientRect();
+    return {
+      tagName: el.tagName,
+      className: el.className || null,
+      rect: { x: r.x, y: r.y, width: r.width, height: r.height },
+      display: cs.display,
+      fontFamily: cs.fontFamily,
+      fontSize: cs.fontSize,
+      fontWeight: cs.fontWeight,
+      lineHeight: cs.lineHeight,
+      letterSpacing: cs.letterSpacing,
+      color: cs.color,
+      backgroundColor: cs.backgroundColor,
+      backgroundClip: cs.backgroundClip,
+      backgroundOrigin: cs.backgroundOrigin,
+      borderTop: cs.borderTop,
+      borderRight: cs.borderRight,
+      borderBottom: cs.borderBottom,
+      borderLeft: cs.borderLeft,
+      borderRadius: cs.borderRadius,
+      boxShadow: cs.boxShadow,
+      opacity: cs.opacity,
+      transform: cs.transform,
+      filter: cs.filter,
+      backdropFilter: cs.backdropFilter,
+      textRendering: cs.textRendering,
+      webkitFontSmoothing: cs.getPropertyValue('-webkit-font-smoothing'),
+      mozOsxFontSmoothing: cs.getPropertyValue('-moz-osx-font-smoothing'),
+      padding: cs.padding,
+      boxSizing: cs.boxSizing,
+    };
+  };
+
+  const pickPlaceholder = (inputEl) => {
+    const cs = window.getComputedStyle(inputEl, '::placeholder');
+    return {
+      fontFamily: cs.fontFamily,
+      fontSize: cs.fontSize,
+      fontWeight: cs.fontWeight,
+      lineHeight: cs.lineHeight,
+      letterSpacing: cs.letterSpacing,
+      color: cs.color,
+      opacity: cs.opacity,
+    };
+  };
+
+  const out = {};
+  for (const [name, sel] of targets) {
+    const el = document.querySelector(sel);
+    if (!el) {
+      out[name] = null;
+      continue;
+    }
+
+    const entry = { root: pick(el) };
+
+    if (name === 'users_search') {
+      const input = el.querySelector('input');
+      const prefixSvg = el.querySelector('svg');
+      entry.input = input ? pick(input) : null;
+      entry.placeholder = input ? pickPlaceholder(input) : null;
+      entry.svg = prefixSvg ? pick(prefixSvg) : null;
+    }
+
+    if (name === 'users_select') {
+      const txt =
+        el.querySelector('.semi-select-selection-text') ||
+        el.querySelector('.semi-select-selection-placeholder');
+      const svg = el.querySelector('svg');
+      entry.text = txt ? pick(txt) : null;
+      entry.svg = svg ? pick(svg) : null;
+    }
+
+    if (name === 'users_btn_primary' || name === 'users_btn_secondary') {
+      const content = el.querySelector('.semi-button-content');
+      entry.content = content ? pick(content) : null;
+    }
+
+    if (name === 'users_tag') {
+      const content = el.querySelector('.semi-tag-content');
+      entry.content = content ? pick(content) : null;
+    }
+
+    out[name] = entry;
+  }
+
+  return out;
+}, targets);
+
+return { ok: true, styles };
+}

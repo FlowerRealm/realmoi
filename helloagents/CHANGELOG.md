@@ -2,6 +2,56 @@
 
 本项目使用语义化版本号（SemVer），并遵循 Keep a Changelog 的组织方式记录变更。
 
+## [0.2.127] - 2026-02-21
+
+### 维护
+
+- **[code-quality/fuck-u-code]**: 持续迭代提升静态质量评分，并将全仓 `fuck-u-code analyze` 总分推到 `>95`
+  - runner: `realmoi_status_mcp.py` 降低嵌套与重复；`runner_generate_codex_appserver.py` 拆分为 transport/events 两个模块，入口文件只保留最小编排
+  - backend: `docker_service.py` 将安全解包拆分为独立 helper；`mcp.py` 抽出 WS loop/工具分发以降低嵌套，并修复 `job.create` 组装 form 的类型引用；`billing.py` 抽出聚合/重复计算并显式注册路由以修复“未处理易出错调用”标记；`mcp_judge.py` 抽取复用 helper 并简化分支
+  - tests: `test_mcp_ws_user.py` 拆分长测试为多个断言 helper，降低复杂度与函数长度
+- **[tests/backend]**: 修复重构后测试 patch 钩子丢失导致的失败（`job_manager` docker 相关 wrapper + `/jobs` 模型列表 wrapper）
+- **[repo/git]**: 推送变更到 `origin/master`
+  - ⚠️ EHRB: 远端主分支变更 - 用户已确认风险
+  - 检测依据: `master(分支)` + 语义判定（推送到远端主分支）
+
+### 验证
+
+- **[code-quality/fuck-u-code]**: `fuck-u-code analyze . -f json -o output/fuck-u-code-report23.json`（overallScore: 95.016）
+- **[code-quality/fuck-u-code]**: `fuck-u-code analyze . -f json -o output/fuck-u-code-report25.json`（overallScore: 95.003）
+- **[python]**: `python -m py_compile backend/tests/test_mcp_ws_user.py runner/app/runner_generate_codex_appserver.py`
+- **[tests/backend]**: `.venv/bin/python -m pytest -q backend/tests/test_mcp_ws_user.py`（1 passed）
+- **[tests/backend]**: `.venv/bin/python -m pytest`（63 passed）
+
+## [0.2.125] - 2026-02-20
+
+### 维护
+
+- **[code-quality/fuck-u-code]**: 为提升 `fuck-u-code analyze` 评分与可维护性，对多处“大文件/高复杂度/低注释”模块做结构化重构
+  - frontend: `Cockpit` 拆分渲染层 `CockpitView`；`Admin/*` 页面补齐结构说明注释
+  - runner: 抽出 `runner_program.run_program`；重构 `runner_generate_codex_appserver` 事件循环；整理 `runner_generate` 命名与注释
+  - backend: 抽出 `job_manager_plans` / `job_manager_runners`；`/jobs` 路由拆分表单依赖，降低参数数与命名扣分
+
+### 验证
+
+- **[frontend/tsc]**: `npx tsc -p frontend/tsconfig.json --noEmit`
+- **[python]**: `python -m py_compile`（覆盖本次修改到的 runner/backend 脚本）
+
+## [0.2.126] - 2026-02-20
+
+### 维护
+
+- **[code-quality/fuck-u-code]**: 继续迭代提高静态评分（聚焦拆分大函数、降低异常“忽略”计数、补充结构性注释）
+  - backend: 重构 `usage_records.py` 与 `zip_safe.py`；改造 `docker_service.py` 容器参数分组（`ContainerJob/ContainerResources`）；抽出 `job_manager_utils.py` 并在 `job_manager.py` 复用
+  - runner: 改造 `runner_generate_codex_exec.py`（拆分事件处理、降低长函数与命名扣分）；同步 `runner_generate.py` 调用参数结构
+  - scripts: 抽出通用支撑 `scripts/e2e_support.py`，`e2e_knapsack.py` 聚焦业务用例流程
+  - frontend: 重构 `frontend/pw/report.ts`（拆分 `renderMarkdown` 子段落渲染函数，增加报告读取鲁棒提示）
+
+### 验证
+
+- **[frontend/tsc]**: `npx tsc -p frontend/tsconfig.json --noEmit`
+- **[python]**: `python -m py_compile`（覆盖本次修改到的 runner/backend/scripts）
+
 ## [0.2.124] - 2026-02-16
 
 ### 修复

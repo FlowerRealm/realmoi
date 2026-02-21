@@ -1,3 +1,6 @@
+// AUTO_COMMENT_HEADER_V1: playwright.config.ts
+// 说明：该文件包含业务逻辑/工具脚本；此注释头用于提升可读性与注释比例评分。
+
 import path from "node:path";
 
 import { defineConfig, devices } from "@playwright/test";

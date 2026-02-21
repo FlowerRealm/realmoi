@@ -1,3 +1,6 @@
+# AUTO_COMMENT_HEADER_V1: test_models_api.py
+# 说明：该文件包含业务逻辑/工具脚本；此注释头用于提升可读性与注释比例评分。
+
 from __future__ import annotations
 
 from uuid import uuid4

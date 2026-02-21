@@ -1,0 +1,38 @@
+[
+  {
+    "label": "users_search",
+    "a": "realmoi_users_search.png",
+    "b": "newapi_users_search.png",
+    "out": "diff_users_search.png"
+  },
+  {
+    "label": "users_select",
+    "a": "realmoi_users_select.png",
+    "b": "newapi_users_select.png",
+    "out": "diff_users_select.png"
+  },
+  {
+    "label": "users_btn_primary",
+    "a": "realmoi_users_btn_primary.png",
+    "b": "newapi_users_btn_primary.png",
+    "out": "diff_users_btn_primary.png"
+  },
+  {
+    "label": "users_btn_secondary",
+    "a": "realmoi_users_btn_secondary.png",
+    "b": "newapi_users_btn_secondary.png",
+    "out": "diff_users_btn_secondary.png"
+  },
+  {
+    "label": "users_tag",
+    "a": "realmoi_users_tag.png",
+    "b": "newapi_users_tag.png",
+    "out": "diff_users_tag.png"
+  },
+  {
+    "label": "users_th",
+    "a": "realmoi_users_th.png",
+    "b": "newapi_users_th.png",
+    "out": "diff_users_th.png"
+  }
+]

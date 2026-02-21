@@ -1,3 +1,6 @@
+#
+# Job path helpers (filesystem layout).
+#
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -33,4 +36,3 @@ def get_job_paths(*, jobs_root: Path, job_id: str) -> JobPaths:
         terminal_log=logs_dir / "terminal.log",
         agent_status_jsonl=logs_dir / "agent_status.jsonl",
     )
-

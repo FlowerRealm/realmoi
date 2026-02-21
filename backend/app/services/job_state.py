@@ -1,3 +1,6 @@
+#
+# Job state helpers.
+#
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
@@ -21,4 +24,3 @@ def load_state(path: Path) -> dict[str, Any]:
 
 def save_state(path: Path, state: dict[str, Any]) -> None:
     write_json(path, state)
-

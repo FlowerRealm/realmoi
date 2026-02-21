@@ -23,17 +23,20 @@ def db_session() -> Session:
     try:
         yield session
     finally:
-        session.close()
+        try:
+            session.close()
+        except Exception as exc:  # pragma: no cover
+            raise RuntimeError(f"db_session_close_failed: {exc}") from exc
 
 
 def init_db() -> None:
     from .models import Base  # noqa: WPS433
 
-    Base.metadata.create_all(bind=engine)
-    _ensure_model_pricing_columns()
+    _ = Base.metadata.create_all(bind=engine)
+    ensure_model_pricing_columns()
 
 
-def _ensure_model_pricing_columns() -> None:
+def ensure_model_pricing_columns() -> None:
     inspector = inspect(engine)
     table_names = set(inspector.get_table_names())
     if "model_pricing" not in table_names:
@@ -42,4 +45,5 @@ def _ensure_model_pricing_columns() -> None:
     if "upstream_channel" in columns:
         return
     with engine.begin() as conn:
-        conn.execute(text("ALTER TABLE model_pricing ADD COLUMN upstream_channel VARCHAR(64) NOT NULL DEFAULT ''"))
+        result = conn.execute(text("ALTER TABLE model_pricing ADD COLUMN upstream_channel VARCHAR(64) NOT NULL DEFAULT ''"))
+        _ = result.rowcount

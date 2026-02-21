@@ -11,6 +11,18 @@ import type {
   TextTruncationOffender,
 } from "./report";
 
+/**
+ * Collect rough layout diagnostics in the browser context.
+ *
+ * Goals:
+ * - be deterministic and cheap (hard caps on scans)
+ * - focus on "high-signal" offenders users feel immediately (overflow, clipping, occlusion, overlap)
+ * - keep payload small (top-N offenders only)
+ *
+ * Notes:
+ * - This is a heuristic, not a full accessibility/layout engine.
+ * - It intentionally trades completeness for speed.
+ */
 export async function collectLayoutMetrics(page: Page): Promise<LayoutMetrics> {
   return await page.evaluate(() => {
     const root = document.documentElement;
@@ -22,8 +34,10 @@ export async function collectLayoutMetrics(page: Page): Promise<LayoutMetrics> {
     const clientHeight = root.clientHeight;
     const scrollHeight = root.scrollHeight;
 
+    // Page-level overflow is a common regression; we keep a cheap global signal plus top offenders.
     const horizontalOverflowPx = Math.max(0, Math.round(scrollWidth - clientWidth));
 
+    // Compact element ref suitable for JSON reports (no DOM nodes).
     const elRef = (el: Element | null): ElementRef => {
       const htmlEl = el as HTMLElement | null;
       const rawText = (el?.textContent || "").replace(/\s+/g, " ").trim();
@@ -37,6 +51,7 @@ export async function collectLayoutMetrics(page: Page): Promise<LayoutMetrics> {
     if (horizontalOverflowPx > 0 && document.body) {
       const vw = clientWidth || viewportWidth;
       const nodes = Array.from(document.body.querySelectorAll("*"));
+      // Cap scanning to avoid pathological pages locking up the audit.
       const maxScan = 2500;
       const cap = Math.min(nodes.length, maxScan);
       const tmp: Array<OverflowOffender & { score: number }> = [];
@@ -139,6 +154,7 @@ export async function collectLayoutMetrics(page: Page): Promise<LayoutMetrics> {
       const rect = el.getBoundingClientRect();
       let p: HTMLElement | null = el.parentElement;
       let depth = 0;
+      // Walk a few ancestors only; deep trees can be expensive.
       while (p && depth < 8) {
         const ps = getComputedStyle(p);
         if (overflowClips(ps, "x") || overflowClips(ps, "y")) {
@@ -168,6 +184,7 @@ export async function collectLayoutMetrics(page: Page): Promise<LayoutMetrics> {
 
     // 3) Occluded interactive targets (center point not hit).
     for (const el of visible) {
+      // Only audit elements that are intended to be clicked or typed into.
       if (
         !(
           el.matches("button") ||
@@ -204,6 +221,7 @@ export async function collectLayoutMetrics(page: Page): Promise<LayoutMetrics> {
     const clickTargets = visible.filter((el) =>
       el.matches("button, a[href], input, select, textarea, [role='button'], [role='link']")
     );
+    // Keep overlap checks bounded; this is O(n^2).
     const inViewport = clickTargets
       .filter((el) => {
         const r = el.getBoundingClientRect();

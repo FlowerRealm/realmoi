@@ -1,63 +1,79 @@
 from __future__ import annotations
 
+"""User billing API tests.
+
+This file tests:
+- `/api/billing/windows`
+- `/api/billing/events` (cursor pagination)
+- `/api/billing/events/{id}/detail` (permission + breakdown)
+- `/api/billing/daily` (trend aggregation + gap filling)
+"""
+
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
 
 
-def _login(client, username: str, password: str) -> str:
+def login(client, username: str, password: str) -> str:
     resp = client.post("/api/auth/login", json={"username": username, "password": password})
     assert resp.status_code == 200
     return resp.json()["access_token"]
 
 
-def _signup_user(client, username: str) -> tuple[str, str]:
+def signup_user(client, username: str) -> tuple[str, str]:
     resp = client.post("/api/auth/signup", json={"username": username, "password": "password123"})
     assert resp.status_code == 200
     user = resp.json()["user"]
     return user["id"], user["username"]
 
 
-def _insert_usage_record(
-    *,
-    owner_user_id: str,
-    model: str,
-    created_at: datetime,
-    input_tokens: int,
-    cached_input_tokens: int,
-    output_tokens: int,
-    cached_output_tokens: int,
-    cost_microusd: int | None,
-    input_price: int | None = None,
-    cached_input_price: int | None = None,
-    output_price: int | None = None,
-    cached_output_price: int | None = None,
-) -> str:
+@dataclass(frozen=True)
+class UsageRecordInsert:
+    owner_user_id: str
+    model: str
+    created_at: datetime
+    input_tokens: int
+    cached_input_tokens: int
+    output_tokens: int
+    cached_output_tokens: int
+    cost_microusd: int | None
+    input_price: int | None = None
+    cached_input_price: int | None = None
+    output_price: int | None = None
+    cached_output_price: int | None = None
+
+
+def insert_usage_record(record: UsageRecordInsert) -> str:
     from backend.app.db import SessionLocal  # noqa: WPS433
     from backend.app.models import UsageRecord  # noqa: WPS433
 
     with SessionLocal() as db:
         rec = UsageRecord(
             job_id=f"job-{uuid4().hex[:12]}",
-            owner_user_id=owner_user_id,
+            owner_user_id=record.owner_user_id,
             stage="generate",
-            model=model,
-            input_tokens=input_tokens,
-            cached_input_tokens=cached_input_tokens,
-            output_tokens=output_tokens,
-            cached_output_tokens=cached_output_tokens,
+            model=record.model,
+            input_tokens=record.input_tokens,
+            cached_input_tokens=record.cached_input_tokens,
+            output_tokens=record.output_tokens,
+            cached_output_tokens=record.cached_output_tokens,
             currency="USD",
-            input_microusd_per_1m_tokens=input_price,
-            cached_input_microusd_per_1m_tokens=cached_input_price,
-            output_microusd_per_1m_tokens=output_price,
-            cached_output_microusd_per_1m_tokens=cached_output_price,
-            cost_microusd=cost_microusd,
-            created_at=created_at,
+            input_microusd_per_1m_tokens=record.input_price,
+            cached_input_microusd_per_1m_tokens=record.cached_input_price,
+            output_microusd_per_1m_tokens=record.output_price,
+            cached_output_microusd_per_1m_tokens=record.cached_output_price,
+            cost_microusd=record.cost_microusd,
+            created_at=record.created_at,
         )
         db.add(rec)
-        db.commit()
-        db.refresh(rec)
+        try:
+            db.commit()
+            db.refresh(rec)
+        except Exception:
+            db.rollback()
+            raise
         return rec.id
 
 
@@ -67,64 +83,72 @@ def test_billing_windows_and_events_cursor(client):
     start = (now - timedelta(days=2)).strftime("%Y-%m-%d")
     end = now.strftime("%Y-%m-%d")
 
-    owner_id, owner_username = _signup_user(client, f"billing_user_{suffix}")
-    other_id, _ = _signup_user(client, f"billing_other_{suffix}")
+    owner_id, owner_username = signup_user(client, f"billing_user_{suffix}")
+    other_id, _ = signup_user(client, f"billing_other_{suffix}")
     model = f"billing-model-{suffix}"
 
-    newest_id = _insert_usage_record(
-        owner_user_id=owner_id,
-        model=model,
-        created_at=now - timedelta(hours=1),
-        input_tokens=1_000,
-        cached_input_tokens=200,
-        output_tokens=300,
-        cached_output_tokens=40,
-        cost_microusd=250,
-        input_price=1,
-        cached_input_price=1,
-        output_price=1,
-        cached_output_price=1,
+    newest_id = insert_usage_record(
+        UsageRecordInsert(
+            owner_user_id=owner_id,
+            model=model,
+            created_at=now - timedelta(hours=1),
+            input_tokens=1_000,
+            cached_input_tokens=200,
+            output_tokens=300,
+            cached_output_tokens=40,
+            cost_microusd=250,
+            input_price=1,
+            cached_input_price=1,
+            output_price=1,
+            cached_output_price=1,
+        )
     )
-    _insert_usage_record(
-        owner_user_id=owner_id,
-        model=model,
-        created_at=now - timedelta(hours=3),
-        input_tokens=500,
-        cached_input_tokens=10,
-        output_tokens=200,
-        cached_output_tokens=0,
-        cost_microusd=None,
+    insert_usage_record(
+        UsageRecordInsert(
+            owner_user_id=owner_id,
+            model=model,
+            created_at=now - timedelta(hours=3),
+            input_tokens=500,
+            cached_input_tokens=10,
+            output_tokens=200,
+            cached_output_tokens=0,
+            cost_microusd=None,
+        )
     )
-    _insert_usage_record(
-        owner_user_id=owner_id,
-        model=model,
-        created_at=now - timedelta(days=9),
-        input_tokens=9_000,
-        cached_input_tokens=900,
-        output_tokens=1_500,
-        cached_output_tokens=0,
-        cost_microusd=900,
-        input_price=1,
-        cached_input_price=1,
-        output_price=1,
-        cached_output_price=1,
+    insert_usage_record(
+        UsageRecordInsert(
+            owner_user_id=owner_id,
+            model=model,
+            created_at=now - timedelta(days=9),
+            input_tokens=9_000,
+            cached_input_tokens=900,
+            output_tokens=1_500,
+            cached_output_tokens=0,
+            cost_microusd=900,
+            input_price=1,
+            cached_input_price=1,
+            output_price=1,
+            cached_output_price=1,
+        )
     )
-    _insert_usage_record(
-        owner_user_id=other_id,
-        model=model,
-        created_at=now - timedelta(hours=2),
-        input_tokens=9_999,
-        cached_input_tokens=999,
-        output_tokens=999,
-        cached_output_tokens=99,
-        cost_microusd=999,
-        input_price=1,
-        cached_input_price=1,
-        output_price=1,
-        cached_output_price=1,
+    insert_usage_record(
+        UsageRecordInsert(
+            owner_user_id=other_id,
+            model=model,
+            created_at=now - timedelta(hours=2),
+            input_tokens=9_999,
+            cached_input_tokens=999,
+            output_tokens=999,
+            cached_output_tokens=99,
+            cost_microusd=999,
+            input_price=1,
+            cached_input_price=1,
+            output_price=1,
+            cached_output_price=1,
+        )
     )
 
-    token = _login(client, owner_username, "password123")
+    token = login(client, owner_username, "password123")
     headers = {"Authorization": f"Bearer {token}"}
 
     resp_windows = client.get(
@@ -179,40 +203,44 @@ def test_billing_event_detail_and_record_permission(client):
     suffix = uuid4().hex[:8]
     now = datetime.now(tz=timezone.utc)
 
-    owner_id, owner_username = _signup_user(client, f"billing_owner_{suffix}")
-    other_id, _ = _signup_user(client, f"billing_other_{suffix}")
+    owner_id, owner_username = signup_user(client, f"billing_owner_{suffix}")
+    other_id, _ = signup_user(client, f"billing_other_{suffix}")
     model = f"billing-detail-model-{suffix}"
 
-    own_record_id = _insert_usage_record(
-        owner_user_id=owner_id,
-        model=model,
-        created_at=now - timedelta(minutes=30),
-        input_tokens=1_200_000,
-        cached_input_tokens=200_000,
-        output_tokens=800_000,
-        cached_output_tokens=100_000,
-        cost_microusd=4,
-        input_price=2,
-        cached_input_price=1,
-        output_price=4,
-        cached_output_price=1,
+    own_record_id = insert_usage_record(
+        UsageRecordInsert(
+            owner_user_id=owner_id,
+            model=model,
+            created_at=now - timedelta(minutes=30),
+            input_tokens=1_200_000,
+            cached_input_tokens=200_000,
+            output_tokens=800_000,
+            cached_output_tokens=100_000,
+            cost_microusd=4,
+            input_price=2,
+            cached_input_price=1,
+            output_price=4,
+            cached_output_price=1,
+        )
     )
-    other_record_id = _insert_usage_record(
-        owner_user_id=other_id,
-        model=model,
-        created_at=now - timedelta(minutes=20),
-        input_tokens=100,
-        cached_input_tokens=0,
-        output_tokens=50,
-        cached_output_tokens=0,
-        cost_microusd=1,
-        input_price=1,
-        cached_input_price=1,
-        output_price=1,
-        cached_output_price=1,
+    other_record_id = insert_usage_record(
+        UsageRecordInsert(
+            owner_user_id=other_id,
+            model=model,
+            created_at=now - timedelta(minutes=20),
+            input_tokens=100,
+            cached_input_tokens=0,
+            output_tokens=50,
+            cached_output_tokens=0,
+            cost_microusd=1,
+            input_price=1,
+            cached_input_price=1,
+            output_price=1,
+            cached_output_price=1,
+        )
     )
 
-    token = _login(client, owner_username, "password123")
+    token = login(client, owner_username, "password123")
     headers = {"Authorization": f"Bearer {token}"}
 
     resp_detail = client.get(
@@ -242,64 +270,68 @@ def test_billing_event_detail_and_record_permission(client):
 
 def test_billing_daily_trend_aggregates_and_fills_missing_days(client):
     suffix = uuid4().hex[:8]
-    owner_id, owner_username = _signup_user(client, f"billing_daily_{suffix}")
-    other_id, _ = _signup_user(client, f"billing_daily_other_{suffix}")
+    owner_id, owner_username = signup_user(client, f"billing_daily_{suffix}")
+    other_id, _ = signup_user(client, f"billing_daily_other_{suffix}")
     model = f"billing-daily-model-{suffix}"
 
-    _insert_usage_record(
-        owner_user_id=owner_id,
-        model=model,
-        created_at=datetime(2026, 1, 10, 10, 30, tzinfo=timezone.utc),
-        input_tokens=100,
-        cached_input_tokens=20,
-        output_tokens=50,
-        cached_output_tokens=10,
-        cost_microusd=100,
-        input_price=1,
-        cached_input_price=1,
-        output_price=1,
-        cached_output_price=1,
-    )
-    _insert_usage_record(
-        owner_user_id=owner_id,
-        model=model,
-        created_at=datetime(2026, 1, 12, 8, 0, tzinfo=timezone.utc),
-        input_tokens=200,
-        cached_input_tokens=0,
-        output_tokens=100,
-        cached_output_tokens=0,
-        cost_microusd=None,
-    )
-    _insert_usage_record(
-        owner_user_id=owner_id,
-        model=model,
-        created_at=datetime(2026, 1, 12, 18, 45, tzinfo=timezone.utc),
-        input_tokens=300,
-        cached_input_tokens=100,
-        output_tokens=200,
-        cached_output_tokens=50,
-        cost_microusd=300,
-        input_price=1,
-        cached_input_price=1,
-        output_price=1,
-        cached_output_price=1,
-    )
-    _insert_usage_record(
-        owner_user_id=other_id,
-        model=model,
-        created_at=datetime(2026, 1, 12, 9, 0, tzinfo=timezone.utc),
-        input_tokens=9_999,
-        cached_input_tokens=999,
-        output_tokens=9_999,
-        cached_output_tokens=999,
-        cost_microusd=999,
-        input_price=1,
-        cached_input_price=1,
-        output_price=1,
-        cached_output_price=1,
-    )
+    inserts = [
+        UsageRecordInsert(
+            owner_user_id=owner_id,
+            model=model,
+            created_at=datetime(2026, 1, 10, 10, 30, tzinfo=timezone.utc),
+            input_tokens=100,
+            cached_input_tokens=20,
+            output_tokens=50,
+            cached_output_tokens=10,
+            cost_microusd=100,
+            input_price=1,
+            cached_input_price=1,
+            output_price=1,
+            cached_output_price=1,
+        ),
+        UsageRecordInsert(
+            owner_user_id=owner_id,
+            model=model,
+            created_at=datetime(2026, 1, 12, 8, 0, tzinfo=timezone.utc),
+            input_tokens=200,
+            cached_input_tokens=0,
+            output_tokens=100,
+            cached_output_tokens=0,
+            cost_microusd=None,
+        ),
+        UsageRecordInsert(
+            owner_user_id=owner_id,
+            model=model,
+            created_at=datetime(2026, 1, 12, 18, 45, tzinfo=timezone.utc),
+            input_tokens=300,
+            cached_input_tokens=100,
+            output_tokens=200,
+            cached_output_tokens=50,
+            cost_microusd=300,
+            input_price=1,
+            cached_input_price=1,
+            output_price=1,
+            cached_output_price=1,
+        ),
+        UsageRecordInsert(
+            owner_user_id=other_id,
+            model=model,
+            created_at=datetime(2026, 1, 12, 9, 0, tzinfo=timezone.utc),
+            input_tokens=9_999,
+            cached_input_tokens=999,
+            output_tokens=9_999,
+            cached_output_tokens=999,
+            cost_microusd=999,
+            input_price=1,
+            cached_input_price=1,
+            output_price=1,
+            cached_output_price=1,
+        ),
+    ]
+    for r in inserts:
+        insert_usage_record(r)
 
-    token = _login(client, owner_username, "password123")
+    token = login(client, owner_username, "password123")
     headers = {"Authorization": f"Bearer {token}"}
     resp = client.get(
         "/api/billing/daily",

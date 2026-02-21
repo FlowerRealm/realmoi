@@ -25,54 +25,80 @@ class ModelItem(BaseModel):
     cached_output_microusd_per_1m_tokens: int
 
 
+def enabled_channels_set(*, db: DbDep) -> set[str]:
+    # Only expose models for currently enabled upstream channels.
+    return {item.channel for item in list_upstream_channels(db=db, include_disabled=False) if item.channel}
+
+
+def pricing_complete(row: ModelPricing) -> bool:
+    return None not in (
+        row.input_microusd_per_1m_tokens,
+        row.cached_input_microusd_per_1m_tokens,
+        row.output_microusd_per_1m_tokens,
+        row.cached_output_microusd_per_1m_tokens,
+    )
+
+
+def priced_model_item(*, channel: str, row: ModelPricing) -> ModelItem:
+    return ModelItem(
+        model=row.model,
+        upstream_channel=channel,
+        display_name=f"[{channel}] {row.model}",
+        currency=row.currency,
+        unit=row.unit,
+        input_microusd_per_1m_tokens=row.input_microusd_per_1m_tokens,
+        cached_input_microusd_per_1m_tokens=row.cached_input_microusd_per_1m_tokens,
+        output_microusd_per_1m_tokens=row.output_microusd_per_1m_tokens,
+        cached_output_microusd_per_1m_tokens=row.cached_output_microusd_per_1m_tokens,
+    )
+
+
+def live_model_item(*, channel: str, model: str, priced: ModelPricing | None) -> ModelItem:
+    has_valid_pricing = bool(priced and pricing_complete(priced))
+    if has_valid_pricing and priced is not None:
+        return ModelItem(
+            model=model,
+            upstream_channel=channel,
+            display_name=f"[{channel}] {model}",
+            currency=priced.currency,
+            unit=priced.unit,
+            input_microusd_per_1m_tokens=priced.input_microusd_per_1m_tokens,
+            cached_input_microusd_per_1m_tokens=priced.cached_input_microusd_per_1m_tokens,
+            output_microusd_per_1m_tokens=priced.output_microusd_per_1m_tokens,
+            cached_output_microusd_per_1m_tokens=priced.cached_output_microusd_per_1m_tokens,
+        )
+    return ModelItem(
+        model=model,
+        upstream_channel=channel,
+        display_name=f"[{channel}] {model}",
+        currency="USD",
+        unit="1M_TOKENS",
+        input_microusd_per_1m_tokens=0,
+        cached_input_microusd_per_1m_tokens=0,
+        output_microusd_per_1m_tokens=0,
+        cached_output_microusd_per_1m_tokens=0,
+    )
+
+
 @router.get("", response_model=list[ModelItem])
 def list_models(_: CurrentUserDep, db: DbDep):
-    enabled_channels = {
-        item.channel
-        for item in list_upstream_channels(db=db, include_disabled=False)
-        if item.channel
-    }
-
+    enabled_channels = enabled_channels_set(db=db)
     items = db.scalars(select(ModelPricing).where(ModelPricing.is_active == True)).all()  # noqa: E712
     result: list[ModelItem] = []
     for item in items:
         channel = (item.upstream_channel or "").strip()
-        if not channel:
+        if not channel or channel not in enabled_channels:
             continue
-        if channel not in enabled_channels:
+        if not pricing_complete(item):
             continue
-
-        if None in (
-            item.input_microusd_per_1m_tokens,
-            item.cached_input_microusd_per_1m_tokens,
-            item.output_microusd_per_1m_tokens,
-            item.cached_output_microusd_per_1m_tokens,
-        ):
-            continue
-        result.append(
-            ModelItem(
-                model=item.model,
-                upstream_channel=channel,
-                display_name=f"[{channel}] {item.model}",
-                currency=item.currency,
-                unit=item.unit,
-                input_microusd_per_1m_tokens=item.input_microusd_per_1m_tokens,
-                cached_input_microusd_per_1m_tokens=item.cached_input_microusd_per_1m_tokens,
-                output_microusd_per_1m_tokens=item.output_microusd_per_1m_tokens,
-                cached_output_microusd_per_1m_tokens=item.cached_output_microusd_per_1m_tokens,
-            )
-        )
+        result.append(priced_model_item(channel=channel, row=item))
     result.sort(key=lambda x: (x.upstream_channel.lower(), x.model.lower()))
     return result
 
 
 @router.get("/live", response_model=list[ModelItem])
 def list_live_models(_: CurrentUserDep, db: DbDep):
-    enabled_channels = [
-        item.channel
-        for item in list_upstream_channels(db=db, include_disabled=False)
-        if item.channel
-    ]
+    enabled_channels = sorted(enabled_channels_set(db=db))
     if not enabled_channels:
         return []
 
@@ -94,33 +120,7 @@ def list_live_models(_: CurrentUserDep, db: DbDep):
 
         for model in model_ids:
             priced = priced_by_key.get((channel, model))
-            has_valid_pricing = bool(
-                priced
-                and None
-                not in (
-                    priced.input_microusd_per_1m_tokens,
-                    priced.cached_input_microusd_per_1m_tokens,
-                    priced.output_microusd_per_1m_tokens,
-                    priced.cached_output_microusd_per_1m_tokens,
-                )
-            )
-            result.append(
-                ModelItem(
-                    model=model,
-                    upstream_channel=channel,
-                    display_name=f"[{channel}] {model}",
-                    currency=(priced.currency if priced else "USD") if has_valid_pricing else "USD",
-                    unit=(priced.unit if priced else "1M_TOKENS") if has_valid_pricing else "1M_TOKENS",
-                    input_microusd_per_1m_tokens=priced.input_microusd_per_1m_tokens if has_valid_pricing else 0,
-                    cached_input_microusd_per_1m_tokens=(
-                        priced.cached_input_microusd_per_1m_tokens if has_valid_pricing else 0
-                    ),
-                    output_microusd_per_1m_tokens=priced.output_microusd_per_1m_tokens if has_valid_pricing else 0,
-                    cached_output_microusd_per_1m_tokens=(
-                        priced.cached_output_microusd_per_1m_tokens if has_valid_pricing else 0
-                    ),
-                )
-            )
+            result.append(live_model_item(channel=channel, model=model, priced=priced))
 
     result.sort(key=lambda x: (x.upstream_channel.lower(), x.model.lower()))
     return result

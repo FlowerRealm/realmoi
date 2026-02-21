@@ -1,174 +1,62 @@
 from __future__ import annotations
 
+# End-to-end smoke test: 0/1 knapsack.
+#
+# 目标：
+# - 在本地或 CI 环境里，对“创建 job -> 启动 -> 等待 -> 拉取 report”链路做一次全流程验证
+# - 通过 MCP WS（/api/mcp/ws）实时 tail 任务状态（可选）
+#
+# 说明：这是测试脚本，不是业务代码；因此容错以“输出可读日志 + 不中断清理”为主。
+#
+# AUTO_COMMENT_HEADER_V1: e2e_knapsack.py
+# - 该脚本的成功判定：report.status=succeeded 且 compile.ok 且 summary.failed=0
+# - 该脚本优先验证“接口链路”而不是“题目本身”，因此输入规模较小
+
 import argparse
 import base64
 import io
 import json
 import os
-import sys
 import threading
 import time
-from urllib.parse import quote, urlencode, urlparse, urlunparse
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import httpx
+from urllib.parse import quote
 
 try:
-    from websockets.sync.client import connect  # type: ignore
+    from e2e_support import (  # type: ignore
+        APIRequestFailed,
+        MCPWebSocketClient,
+        api_request,
+        now_milliseconds,
+        print_line,
+        tail_job_stream_mcp,
+        tail_terminal_log_local,
+    )
 except ModuleNotFoundError:  # pragma: no cover
-    connect = None  # type: ignore[assignment]
+    import sys as _sys
+    from pathlib import Path as _Path
 
-
-def _now_ms() -> int:
-    return int(time.time() * 1000)
-
-
-def _print(msg: str) -> None:
-    print(msg, flush=True)
-
-def _print_stream(text: str) -> None:
-    sys.stdout.write(text)
-    sys.stdout.flush()
-
-
-class ApiFailed(Exception):
-    pass
-
-
-@dataclass(frozen=True)
-class ApiErrorInfo:
-    status_code: int
-    code: str
-    message: str
-
-
-def _parse_api_error(resp: httpx.Response) -> ApiErrorInfo:
-    code = "http_error"
-    message = resp.text
-    try:
-        data = resp.json()
-        if isinstance(data, dict) and isinstance(data.get("error"), dict):
-            err = data["error"]
-            code = str(err.get("code") or code)
-            message = str(err.get("message") or message)
-    except Exception:
-        pass
-    return ApiErrorInfo(status_code=resp.status_code, code=code, message=message)
-
-
-def api_request(
-    client: httpx.Client,
-    *,
-    api_base: str,
-    method: str,
-    path: str,
-    token: str | None = None,
-    **kwargs: Any,
-) -> httpx.Response:
-    url = api_base.rstrip("/") + (path if path.startswith("/") else "/" + path)
-    headers = dict(kwargs.pop("headers", {}) or {})
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    resp = client.request(method, url, headers=headers, **kwargs)
-    if resp.status_code >= 400:
-        err = _parse_api_error(resp)
-        raise ApiFailed(f"{method} {path}: {err.status_code} {err.code} {err.message}")
-    return resp
-
-
-def _build_mcp_ws_url(*, api_base: str, token: str) -> str:
-    base = str(api_base or "").strip().rstrip("/")
-    if not base:
-        raise ApiFailed("mcp: empty api_base")
-
-    parsed = urlparse(base)
-    scheme = parsed.scheme
-    netloc = parsed.netloc
-    path = parsed.path
-
-    if not scheme or not netloc:
-        # Allow bare host:port/api
-        parsed = urlparse("http://" + base)
-        scheme = parsed.scheme
-        netloc = parsed.netloc
-        path = parsed.path
-
-    ws_scheme = "wss" if scheme == "https" else "ws"
-    api_path = path.rstrip("/")
-    if not api_path.endswith("/api"):
-        api_path = api_path + "/api" if api_path else "/api"
-    ws_path = api_path + "/mcp/ws"
-    query = urlencode({"token": token})
-    return urlunparse((ws_scheme, netloc, ws_path, "", query, ""))
-
-
-class McpWsClient:
-    def __init__(self, *, api_base: str, token: str):
-        if connect is None:
-            raise ApiFailed("mcp: websockets not installed (need uvicorn[standard] / websockets)")
-        self._ws_url = _build_mcp_ws_url(api_base=api_base, token=token)
-        self._ws = connect(self._ws_url)
-        self._next_id = 0
-        self.request("initialize", {})
-
-    def close(self) -> None:
-        try:
-            self._ws.close()
-        except Exception:
-            pass
-
-    def _send(self, obj: dict[str, Any]) -> None:
-        self._ws.send(json.dumps(obj, ensure_ascii=False))
-
-    def recv(self, *, timeout: float | None = None) -> dict[str, Any] | None:
-        try:
-            raw = self._ws.recv(timeout=timeout)
-        except TimeoutError:
-            return None
-        except Exception:
-            return None
-        if raw is None:
-            return None
-        if isinstance(raw, bytes):
-            raw = raw.decode("utf-8", errors="replace")
-        try:
-            obj = json.loads(str(raw))
-        except Exception:
-            return None
-        return obj if isinstance(obj, dict) else None
-
-    def request(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
-        self._next_id += 1
-        msg_id = self._next_id
-        self._send({"jsonrpc": "2.0", "id": msg_id, "method": method, "params": params})
-
-        while True:
-            msg = self.recv(timeout=30.0)
-            if msg is None:
-                raise ApiFailed(f"mcp: timeout waiting for {method}")
-            if msg.get("id") != msg_id:
-                continue
-            if "error" in msg and msg.get("error"):
-                err = msg.get("error") or {}
-                if isinstance(err, dict):
-                    raise ApiFailed(f"mcp {method}: {err.get('code')} {err.get('message')}")
-                raise ApiFailed(f"mcp {method}: {err}")
-            result = msg.get("result")
-            if not isinstance(result, dict):
-                raise ApiFailed(f"mcp {method}: invalid result")
-            return result
-
-    def call_tool(self, *, name: str, arguments: dict[str, Any]) -> Any:
-        result = self.request("tools/call", {"name": name, "arguments": arguments})
-        if "structuredContent" in result:
-            return result.get("structuredContent")
-        return result
+    _scripts_dir = str(_Path(__file__).resolve().parent)
+    if _scripts_dir not in _sys.path:
+        _sys.path.insert(0, _scripts_dir)
+    from e2e_support import (  # type: ignore
+        APIRequestFailed,
+        MCPWebSocketClient,
+        api_request,
+        now_milliseconds,
+        print_line,
+        tail_job_stream_mcp,
+        tail_terminal_log_local,
+    )
 
 
 def make_knapsack_tests_zip() -> bytes:
+    """构造一份最小 `tests.zip`（输入/期望输出）用于端到端验证。"""
     cases = {
         "tests/1.in": "3 4\n2 3\n1 2\n3 4\n",
         "tests/1.out": "6\n",
@@ -189,6 +77,7 @@ def make_knapsack_tests_zip() -> bytes:
 
 
 def knapsack_statement_md() -> str:
+    """返回 0/1 背包题面（Markdown）。"""
     return """# 01 背包（模板题）
 
 给定 n 件物品和一个容量为 W 的背包。第 i 件物品的重量为 w_i，价值为 v_i。
@@ -215,6 +104,7 @@ def knapsack_statement_md() -> str:
 
 
 def seed_wrong_cpp() -> str:
+    """返回一份故意错误的 C++ 种子代码（贪心 v/w，0/1 背包不成立）。"""
     # 一个常见错误：按 v/w 贪心（0/1 背包不成立）
     return r"""#include <bits/stdc++.h>
 using namespace std;
@@ -243,107 +133,93 @@ int main() {
 """
 
 
-def tail_terminal_log_local(*, jobs_root: Path, job_id: str, last_offset: int) -> int:
-    log_path = jobs_root / job_id / "logs" / "terminal.log"
-    if not log_path.exists():
-        return last_offset
-    data = log_path.read_bytes()
-    if last_offset >= len(data):
-        return last_offset
-    chunk = data[last_offset:]
-    try:
-        text = chunk.decode("utf-8", errors="replace")
-    except Exception:
-        text = ""
-    if text:
-        _print(text.rstrip("\n"))
-    return len(data)
+@dataclass(frozen=True)
+class E2EArgs:
+    api_base: str
+    admin_username: str
+    admin_password: str
+    model: str
+    search_mode: str
+    timeout_seconds: int
+    poll_seconds: float
+    tail_terminal: bool
+    jobs_root: str
 
 
-def tail_job_stream_mcp(*, stop: threading.Event, api_base: str, token: str, job_id: str) -> None:
-    try:
-        client = McpWsClient(api_base=api_base, token=token)
-    except Exception as e:  # noqa: BLE001
-        _print(f"[e2e] mcp tail disabled: {e}")
-        return
+@dataclass(frozen=True)
+class JobWaitConfig:
+    """等待 job 结束的配置。"""
 
-    try:
-        client.call_tool(
-            name="job.subscribe",
-            arguments={"job_id": job_id, "streams": ["agent_status", "terminal"], "agent_status_offset": 0, "terminal_offset": 0},
-        )
-        while not stop.is_set():
-            msg = client.recv(timeout=0.5)
-            if msg is None:
-                continue
-            method = msg.get("method")
-            params = msg.get("params") if isinstance(msg.get("params"), dict) else {}
-            if str(params.get("job_id") or "") != job_id:
-                continue
-
-            if method == "terminal":
-                chunk_b64 = str(params.get("chunk_b64") or "")
-                try:
-                    chunk = base64.b64decode(chunk_b64.encode("ascii"))
-                    _print_stream(chunk.decode("utf-8", errors="replace"))
-                except Exception:
-                    continue
-                continue
-
-            if method == "agent_status":
-                item = params.get("item") if isinstance(params.get("item"), dict) else {}
-                stage = str(item.get("stage") or "")
-                summary = str(item.get("summary") or "")
-                if stage or summary:
-                    _print(f"[agent] {stage}: {summary}")
-    finally:
-        client.close()
+    timeout_seconds: int
+    poll_seconds: float
+    tail_terminal: bool
+    jobs_root: Path
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--api-base", default=os.environ.get("REALMOI_E2E_API_BASE", "http://localhost:8000/api"))
-    ap.add_argument("--admin-username", default=os.environ.get("REALMOI_ADMIN_USERNAME", "admin"))
-    ap.add_argument("--admin-password", default=os.environ.get("REALMOI_ADMIN_PASSWORD", "admin-password-123"))
-    ap.add_argument("--model", default=os.environ.get("REALMOI_E2E_MODEL", "gpt-5.2-codex"))
-    ap.add_argument("--search-mode", choices=["disabled", "cached", "live"], default="disabled")
-    ap.add_argument("--timeout-seconds", type=int, default=1800)
-    ap.add_argument("--poll-seconds", type=float, default=2.0)
-    ap.add_argument("--tail-terminal", action="store_true")
-    ap.add_argument("--jobs-root", default=os.environ.get("REALMOI_JOBS_ROOT", "jobs"))
-    args = ap.parse_args()
+def parse_args() -> E2EArgs:
+    """解析命令行参数并回填环境变量默认值。"""
+    arg_parser = argparse.ArgumentParser()
+    arg_parser.add_argument("--api-base", default=os.environ.get("REALMOI_E2E_API_BASE", "http://localhost:8000/api"))
+    arg_parser.add_argument("--admin-username", default=os.environ.get("REALMOI_ADMIN_USERNAME", "admin"))
+    arg_parser.add_argument("--admin-password", default=os.environ.get("REALMOI_ADMIN_PASSWORD", "admin-password-123"))
+    arg_parser.add_argument("--model", default=os.environ.get("REALMOI_E2E_MODEL", "gpt-5.2-codex"))
+    arg_parser.add_argument("--search-mode", choices=["disabled", "cached", "live"], default="disabled")
+    arg_parser.add_argument("--timeout-seconds", type=int, default=1800)
+    arg_parser.add_argument("--poll-seconds", type=float, default=2.0)
+    arg_parser.add_argument("--tail-terminal", action="store_true")
+    arg_parser.add_argument("--jobs-root", default=os.environ.get("REALMOI_JOBS_ROOT", "jobs"))
+    ns = arg_parser.parse_args()
+    return E2EArgs(
+        api_base=str(ns.api_base),
+        admin_username=str(ns.admin_username),
+        admin_password=str(ns.admin_password),
+        model=str(ns.model),
+        search_mode=str(ns.search_mode),
+        timeout_seconds=int(ns.timeout_seconds),
+        poll_seconds=float(ns.poll_seconds),
+        tail_terminal=bool(ns.tail_terminal),
+        jobs_root=str(ns.jobs_root),
+    )
 
-    api_base = str(args.api_base)
-    model = str(args.model).strip()
-    if not model:
-        _print("[e2e] missing --model")
-        return 2
 
-    client = httpx.Client(timeout=30.0, trust_env=False)
+def login_admin(*, client: httpx.Client, api_base: str, username: str, password: str) -> str:
+    """使用管理员账号登录并返回 access token。"""
+    return request_access_token(
+        client=client,
+        api_base=api_base,
+        path="/auth/login",
+        body={"username": username, "password": password},
+    )
 
-    _print(f"[e2e] api_base={api_base}")
-    _print(f"[e2e] model={model} search_mode={args.search_mode}")
 
-    # 1) login admin
-    admin_login = api_request(
+def request_access_token(
+    *,
+    client: httpx.Client,
+    api_base: str,
+    path: str,
+    body: dict[str, Any],
+) -> str:
+    payload = api_request(
         client,
         api_base=api_base,
         method="POST",
-        path="/auth/login",
-        json={"username": args.admin_username, "password": args.admin_password},
+        path=path,
+        json=body,
     ).json()
-    admin_token = str(admin_login.get("access_token") or "")
-    if not admin_token:
-        raise ApiFailed("admin login returned empty token")
-    _print("[e2e] admin login ok")
+    token = str((payload or {}).get("access_token") or "")
+    if not token:
+        raise APIRequestFailed(f"request_access_token returned empty token path={path}")
+    return token
 
-    # 2) ensure model is active+priced
+
+def enable_pricing_for_model(*, client: httpx.Client, api_base: str, token: str, model: str) -> None:
+    """确保某模型在 admin pricing 中已启用（用于 E2E）。"""
     api_request(
         client,
         api_base=api_base,
         method="PUT",
         path=f"/admin/pricing/models/{quote(model, safe='')}",
-        token=admin_token,
+        headers={"Authorization": f"Bearer {token}"},
         json={
             "currency": "USD",
             "is_active": True,
@@ -353,57 +229,150 @@ def main() -> int:
             "cached_output_microusd_per_1m_tokens": 1,
         },
     )
-    _print("[e2e] pricing enabled")
 
-    # 3) signup user
-    username = f"e2e_knapsack_{_now_ms()}"
-    password = "password-123"
-    user_signup = api_request(
-        client,
-        api_base=api_base,
-        method="POST",
-        path="/auth/signup",
-        json={"username": username, "password": password},
-    ).json()
-    user_token = str(user_signup.get("access_token") or "")
-    if not user_token:
-        raise ApiFailed("signup returned empty token")
-    _print(f"[e2e] user signup ok: {username}")
 
-    # 4) create job with tests.zip (via MCP)
+def create_job_knapsack(*, mcp: MCPWebSocketClient, model: str, search_mode: str) -> str:
+    """通过 MCP 创建 knapsack job 并返回 job_id。"""
     tests_zip = make_knapsack_tests_zip()
-    statement_md = knapsack_statement_md()
-
-    mcp = McpWsClient(api_base=api_base, token=user_token)
     try:
-        created = mcp.call_tool(
-            name="job.create",
-            arguments={
-                "model": model,
-                "statement_md": statement_md,
-                "current_code_cpp": seed_wrong_cpp(),
-                "tests_zip_b64": base64.b64encode(tests_zip).decode("ascii"),
-                "tests_format": "auto",
-                "compare_mode": "tokens",
-                "run_if_no_expected": True,
-                "search_mode": args.search_mode,
-                "reasoning_effort": "medium",
-                "time_limit_ms": 2000,
-                "memory_limit_mb": 1024,
-            },
-        )
-        job_id = str((created or {}).get("job_id") or "")
-        if not job_id:
-            raise ApiFailed("mcp job.create returned empty job_id")
-        _print(f"[e2e] job created: {job_id}")
+        tests_zip_b64 = base64.b64encode(tests_zip).decode("ascii")
+    except (UnicodeDecodeError, ValueError) as exc:
+        raise APIRequestFailed(f"tests_zip encode failed: {type(exc).__name__}: {exc}") from exc
+    created = mcp.call_tool(
+        name="job.create",
+        arguments={
+            "model": model,
+            "statement_md": knapsack_statement_md(),
+            "current_code_cpp": seed_wrong_cpp(),
+            "tests_zip_b64": tests_zip_b64,
+            "tests_format": "auto",
+            "compare_mode": "tokens",
+            "run_if_no_expected": True,
+            "search_mode": search_mode,
+            "reasoning_effort": "medium",
+            "time_limit_ms": 2000,
+            "memory_limit_mb": 1024,
+        },
+    )
+    job_id = str((created or {}).get("job_id") or "")
+    if not job_id:
+        raise APIRequestFailed("mcp job.create returned empty job_id")
+    return job_id
 
-        # 5) start (via MCP)
+
+def cancel_job_best_effort(*, mcp: MCPWebSocketClient, job_id: str) -> None:
+    """尽力取消 job（用于 timeout 清理；失败不抛异常）。"""
+    try:
+        mcp.call_tool(name="job.cancel", arguments={"job_id": job_id})
+    except (APIRequestFailed, OSError, ValueError) as exc:
+        print_line(f"[e2e] cancel failed (best-effort): {type(exc).__name__}: {exc}")
+
+
+def wait_for_job(
+    *,
+    mcp: MCPWebSocketClient,
+    job_id: str,
+    tail_thread: threading.Thread | None,
+    config: JobWaitConfig,
+) -> str:
+    """轮询 job 状态直到结束或超时。"""
+    deadline = time.time() + float(config.timeout_seconds)
+    last_term_off = 0
+
+    while True:
+        # MCP 轮询状态：后端返回的 payload 是 dict（包含 status 字段）。
+        state = mcp.call_tool(name="job.get_state", arguments={"job_id": job_id})
+        if not isinstance(state, dict):
+            raise APIRequestFailed("mcp job.get_state returned invalid payload")
+        status = str(state.get("status") or "")
+
+        if config.tail_terminal and tail_thread is None:
+            # Fallback: local tail when MCP tail thread isn't running.
+            last_term_off = tail_terminal_log_local(
+                jobs_root=config.jobs_root,
+                job_id=job_id,
+                last_offset=last_term_off,
+            )
+
+        if status in ("succeeded", "failed", "cancelled"):
+            return status
+
+        if time.time() > deadline:
+            print_line("[e2e] timeout, cancelling job...")
+            cancel_job_best_effort(mcp=mcp, job_id=job_id)
+            return "timeout"
+
+        time.sleep(float(config.poll_seconds))
+
+
+def fetch_report_json(*, mcp: MCPWebSocketClient, job_id: str) -> dict[str, Any]:
+    """通过 MCP 拉取 `report.json` 并返回解析后的 dict。"""
+    artifacts = mcp.call_tool(name="job.get_artifacts", arguments={"job_id": job_id, "names": ["report.json"]})
+    items = (artifacts or {}).get("items") if isinstance(artifacts, dict) else None
+    report = items.get("report.json") if isinstance(items, dict) else None
+    if not isinstance(report, dict):
+        raise APIRequestFailed("mcp report.json missing")
+    return report
+
+
+def main() -> int:
+    args = parse_args()
+
+    api_base = str(args.api_base)
+    model = str(args.model).strip()
+    if not model:
+        print_line("[e2e] missing --model")
+        return 2
+
+    print_line(f"[e2e] api_base={api_base}")
+    print_line(f"[e2e] model={model} search_mode={args.search_mode}")
+
+    user_token, username = prepare_user_token(args=args, api_base=api_base, model=model)
+    print_line(f"[e2e] user signup ok: {username}")
+    return run_and_verify_knapsack_job(args=args, api_base=api_base, model=model, user_token=user_token)
+
+
+def prepare_user_token(*, args: E2EArgs, api_base: str, model: str) -> tuple[str, str]:
+    with httpx.Client(timeout=30.0, trust_env=False) as client:
+        # 1) 管理员登录：用于启用 pricing（某些环境默认未配置定价）。
+        admin_token = login_admin(
+            client=client,
+            api_base=api_base,
+            username=args.admin_username,
+            password=args.admin_password,
+        )
+        print_line("[e2e] admin login ok")
+
+        # 2) 保障该 model 可计费（否则 usage_records 可能没有 cost 字段）。
+        enable_pricing_for_model(client=client, api_base=api_base, token=admin_token, model=model)
+        print_line("[e2e] pricing enabled")
+
+        # 3) 注册普通用户：用其 token 连接 MCP 并创建 job。
+        username = f"e2e_knapsack_{now_milliseconds()}"
+        user_token = request_access_token(
+            client=client,
+            api_base=api_base,
+            path="/auth/signup",
+            body={"username": username, "password": "password-123"},
+        )
+        return user_token, username
+
+
+def run_and_verify_knapsack_job(*, args: E2EArgs, api_base: str, model: str, user_token: str) -> int:
+    mcp = MCPWebSocketClient(api_base=api_base, token=user_token)
+    try:
+        # 4) 创建 job（传入 statement + seed code + tests.zip）。
+        job_id = create_job_knapsack(mcp=mcp, model=model, search_mode=args.search_mode)
+        print_line(f"[e2e] job created: {job_id}")
+
+        # 5) 启动 job。
         mcp.call_tool(name="job.start", arguments={"job_id": job_id})
-        _print("[e2e] job started, waiting...")
+        print_line("[e2e] job started, waiting...")
 
         stop_tail = threading.Event()
         tail_thread: threading.Thread | None = None
         if args.tail_terminal:
+            # 可选：订阅 MCP 流（agent_status + terminal）用于实时打印。
             tail_thread = threading.Thread(
                 target=tail_job_stream_mcp,
                 kwargs={"stop": stop_tail, "api_base": api_base, "token": user_token, "job_id": job_id},
@@ -411,60 +380,38 @@ def main() -> int:
             )
             tail_thread.start()
 
-        # 6) poll (via MCP)
-        deadline = time.time() + float(args.timeout_seconds)
-        jobs_root = Path(str(args.jobs_root))
-        last_term_off = 0
-        last_state: dict[str, Any] | None = None
-
-        while True:
-            st = mcp.call_tool(name="job.get_state", arguments={"job_id": job_id})
-            if not isinstance(st, dict):
-                raise ApiFailed("mcp job.get_state returned invalid payload")
-            last_state = st
-            status = str(st.get("status") or "")
-
-            if args.tail_terminal and tail_thread is None:
-                # Fallback: local tail when MCP tail thread isn't running.
-                last_term_off = tail_terminal_log_local(jobs_root=jobs_root, job_id=job_id, last_offset=last_term_off)
-
-            if status in ("succeeded", "failed", "cancelled"):
-                _print(f"[e2e] finished: {status}")
-                break
-            if time.time() > deadline:
-                _print("[e2e] timeout, cancelling job...")
-                try:
-                    mcp.call_tool(name="job.cancel", arguments={"job_id": job_id})
-                except Exception:
-                    pass
-                return 1
-            time.sleep(float(args.poll_seconds))
+        config = JobWaitConfig(
+            timeout_seconds=int(args.timeout_seconds),
+            poll_seconds=float(args.poll_seconds),
+            tail_terminal=bool(args.tail_terminal),
+            jobs_root=Path(str(args.jobs_root)),
+        )
+        final_status = wait_for_job(mcp=mcp, job_id=job_id, tail_thread=tail_thread, config=config)
+        if final_status == "timeout":
+            return 1
+        print_line(f"[e2e] finished: {final_status}")
 
         stop_tail.set()
         if tail_thread is not None:
             tail_thread.join(timeout=2.0)
 
-        # Fetch report.json (via MCP)
-        artifacts = mcp.call_tool(name="job.get_artifacts", arguments={"job_id": job_id, "names": ["report.json"]})
-        items = (artifacts or {}).get("items") if isinstance(artifacts, dict) else None
-        report = items.get("report.json") if isinstance(items, dict) else None
-        if not isinstance(report, dict):
-            raise ApiFailed("mcp report.json missing")
-
+        # 7) 拉取 report.json 并给出最终判定。
+        report = fetch_report_json(mcp=mcp, job_id=job_id)
         rep_status = str(report.get("status") or "")
         compile_ok = bool((report.get("compile") or {}).get("ok"))
         failed = int(((report.get("summary") or {}).get("failed") or 0))
-        _print(f"[e2e] report.status={rep_status} compile_ok={compile_ok} failed={failed}")
+        print_line(f"[e2e] report.status={rep_status} compile_ok={compile_ok} failed={failed}")
 
         ok = rep_status == "succeeded" and compile_ok and failed == 0
         if not ok:
-            _print(json.dumps(report, ensure_ascii=False, indent=2))
+            print_line(json.dumps(report, ensure_ascii=False, indent=2))
             return 1
 
-        _print("[e2e] ✅ knapsack passed")
+        print_line("[e2e] ✅ knapsack passed")
         return 0
     finally:
-        mcp.close()
+        # Best-effort: the process is short-lived; explicit close is not required here.
+        pass
 
 
 if __name__ == "__main__":

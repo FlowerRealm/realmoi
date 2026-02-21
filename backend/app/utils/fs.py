@@ -1,3 +1,6 @@
+#
+# File IO helpers.
+#
 from __future__ import annotations
 
 import json
@@ -20,4 +23,3 @@ def write_json(path: Path, obj: Any) -> None:
 
 def read_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
-

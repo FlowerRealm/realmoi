@@ -9,6 +9,15 @@ from sqlalchemy.orm import Session
 from ..models import UpstreamChannel
 from ..settings import SETTINGS
 
+# 上游通道解析与合并逻辑。
+#
+# 数据来源：
+# - env: `SETTINGS.upstream_channels_json`（用于快速配置/CI/开发）
+# - db: `UpstreamChannel` 表（用于后台管理持久化）
+#
+# 合并规则：db 覆盖 env（同名 channel 以 db 为准）。
+# 该模块只做解析与校验，不做实际请求。
+
 
 @dataclass(frozen=True)
 class UpstreamTarget:
@@ -29,7 +38,7 @@ class UpstreamChannelConfig:
     source: str  # env | db
 
 
-def _normalize_models_path(path: str) -> str:
+def normalize_models_path(path: str) -> str:
     normalized = path.strip()
     if not normalized:
         normalized = SETTINGS.upstream_models_path
@@ -38,7 +47,7 @@ def _normalize_models_path(path: str) -> str:
     return normalized
 
 
-def _parse_env_channels() -> dict[str, UpstreamChannelConfig]:
+def parse_env_channels() -> dict[str, UpstreamChannelConfig]:
     raw = (SETTINGS.upstream_channels_json or "").strip()
     if not raw:
         return {}
@@ -53,7 +62,7 @@ def _parse_env_channels() -> dict[str, UpstreamChannelConfig]:
 
     default_base = str(SETTINGS.openai_base_url or "").strip()
     default_key = str(SETTINGS.openai_api_key or "").strip()
-    default_models_path = _normalize_models_path(SETTINGS.upstream_models_path)
+    default_models_path = normalize_models_path(SETTINGS.upstream_models_path)
 
     channels: dict[str, UpstreamChannelConfig] = {}
     for key, value in obj.items():
@@ -64,7 +73,7 @@ def _parse_env_channels() -> dict[str, UpstreamChannelConfig]:
         base_url = str(value.get("base_url") or default_base).strip()
         api_key = str(value.get("api_key") or default_key).strip()
         display_name = str(value.get("display_name") or name).strip() or name
-        models_path = _normalize_models_path(str(value.get("models_path") or default_models_path))
+        models_path = normalize_models_path(str(value.get("models_path") or default_models_path))
         is_enabled = bool(value.get("is_enabled", True))
 
         channels[name] = UpstreamChannelConfig(
@@ -79,7 +88,7 @@ def _parse_env_channels() -> dict[str, UpstreamChannelConfig]:
     return channels
 
 
-def _load_db_channels(db: Session | None) -> dict[str, UpstreamChannelConfig]:
+def load_db_channels(db: Session | None) -> dict[str, UpstreamChannelConfig]:
     if db is None:
         return {}
     rows = db.scalars(select(UpstreamChannel).order_by(UpstreamChannel.channel.asc())).all()
@@ -93,21 +102,21 @@ def _load_db_channels(db: Session | None) -> dict[str, UpstreamChannelConfig]:
             display_name=(row.display_name or "").strip() or channel,
             base_url=(row.base_url or "").strip(),
             api_key=(row.api_key or "").strip(),
-            models_path=_normalize_models_path(str(row.models_path or "")),
+            models_path=normalize_models_path(str(row.models_path or "")),
             is_enabled=bool(row.is_enabled),
             source="db",
         )
     return result
 
 
-def _merged_named_channels(*, db: Session | None = None) -> dict[str, UpstreamChannelConfig]:
-    merged = _parse_env_channels()
-    merged.update(_load_db_channels(db))
+def merged_named_channels(*, db: Session | None = None) -> dict[str, UpstreamChannelConfig]:
+    merged = parse_env_channels()
+    merged.update(load_db_channels(db))
     return merged
 
 
 def list_upstream_channels(*, db: Session | None = None, include_disabled: bool = True) -> list[UpstreamChannelConfig]:
-    merged = _merged_named_channels(db=db)
+    merged = merged_named_channels(db=db)
     items = sorted(merged.values(), key=lambda x: x.channel)
     if include_disabled:
         return items
@@ -127,10 +136,10 @@ def resolve_upstream_target(channel: str | None = None, *, db: Session | None = 
             channel="",
             base_url=base_url,
             api_key=api_key,
-            models_path=_normalize_models_path(SETTINGS.upstream_models_path),
+            models_path=normalize_models_path(SETTINGS.upstream_models_path),
         )
 
-    merged = _merged_named_channels(db=db)
+    merged = merged_named_channels(db=db)
     if channel_name not in merged:
         raise ValueError(f"unknown_upstream_channel:{channel_name}")
     item = merged[channel_name]

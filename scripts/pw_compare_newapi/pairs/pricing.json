@@ -1,0 +1,146 @@
+[
+  {
+    "label": "pricing_tab_model",
+    "a": "realmoi_pricing_tab_model.png",
+    "b": "newapi_pricing_tab_model.png",
+    "out": "diff_pricing_tab_model.png"
+  },
+  {
+    "label": "pricing_tab_group",
+    "a": "realmoi_pricing_tab_group.png",
+    "b": "newapi_pricing_tab_group.png",
+    "out": "diff_pricing_tab_group.png"
+  },
+  {
+    "label": "pricing_tab_visual",
+    "a": "realmoi_pricing_tab_visual.png",
+    "b": "newapi_pricing_tab_visual.png",
+    "out": "diff_pricing_tab_visual.png"
+  },
+  {
+    "label": "pricing_tab_unset",
+    "a": "realmoi_pricing_tab_unset.png",
+    "b": "newapi_pricing_tab_unset.png",
+    "out": "diff_pricing_tab_unset.png"
+  },
+  {
+    "label": "pricing_tab_upstream",
+    "a": "realmoi_pricing_tab_upstream.png",
+    "b": "newapi_pricing_tab_upstream.png",
+    "out": "diff_pricing_tab_upstream.png"
+  },
+  {
+    "label": "pricing_model_modelprice",
+    "a": "realmoi_pricing_model_modelprice.png",
+    "b": "newapi_pricing_model_modelprice.png",
+    "out": "diff_pricing_model_modelprice.png"
+  },
+  {
+    "label": "pricing_model_save",
+    "a": "realmoi_pricing_model_save.png",
+    "b": "newapi_pricing_model_save.png",
+    "out": "diff_pricing_model_save.png"
+  },
+  {
+    "label": "pricing_model_reset",
+    "a": "realmoi_pricing_model_reset.png",
+    "b": "newapi_pricing_model_reset.png",
+    "out": "diff_pricing_model_reset.png"
+  },
+  {
+    "label": "pricing_model_switch",
+    "a": "realmoi_pricing_model_switch.png",
+    "b": "newapi_pricing_model_switch.png",
+    "out": "diff_pricing_model_switch.png"
+  },
+  {
+    "label": "pricing_group_groupratio",
+    "a": "realmoi_pricing_group_groupratio.png",
+    "b": "newapi_pricing_group_groupratio.png",
+    "out": "diff_pricing_group_groupratio.png"
+  },
+  {
+    "label": "pricing_group_save",
+    "a": "realmoi_pricing_group_save.png",
+    "b": "newapi_pricing_group_save.png",
+    "out": "diff_pricing_group_save.png"
+  },
+  {
+    "label": "pricing_visual_add",
+    "a": "realmoi_pricing_visual_add.png",
+    "b": "newapi_pricing_visual_add.png",
+    "out": "diff_pricing_visual_add.png"
+  },
+  {
+    "label": "pricing_visual_apply",
+    "a": "realmoi_pricing_visual_apply.png",
+    "b": "newapi_pricing_visual_apply.png",
+    "out": "diff_pricing_visual_apply.png"
+  },
+  {
+    "label": "pricing_visual_search",
+    "a": "realmoi_pricing_visual_search.png",
+    "b": "newapi_pricing_visual_search.png",
+    "out": "diff_pricing_visual_search.png"
+  },
+  {
+    "label": "pricing_visual_conflict",
+    "a": "realmoi_pricing_visual_conflict.png",
+    "b": "newapi_pricing_visual_conflict.png",
+    "out": "diff_pricing_visual_conflict.png"
+  },
+  {
+    "label": "pricing_unset_add",
+    "a": "realmoi_pricing_unset_add.png",
+    "b": "newapi_pricing_unset_add.png",
+    "out": "diff_pricing_unset_add.png"
+  },
+  {
+    "label": "pricing_unset_batch",
+    "a": "realmoi_pricing_unset_batch.png",
+    "b": "newapi_pricing_unset_batch.png",
+    "out": "diff_pricing_unset_batch.png"
+  },
+  {
+    "label": "pricing_unset_apply",
+    "a": "realmoi_pricing_unset_apply.png",
+    "b": "newapi_pricing_unset_apply.png",
+    "out": "diff_pricing_unset_apply.png"
+  },
+  {
+    "label": "pricing_unset_search",
+    "a": "realmoi_pricing_unset_search.png",
+    "b": "newapi_pricing_unset_search.png",
+    "out": "diff_pricing_unset_search.png"
+  },
+  {
+    "label": "pricing_upstream_select",
+    "a": "realmoi_pricing_upstream_select.png",
+    "b": "newapi_pricing_upstream_select.png",
+    "out": "diff_pricing_upstream_select.png"
+  },
+  {
+    "label": "pricing_upstream_apply",
+    "a": "realmoi_pricing_upstream_apply.png",
+    "b": "newapi_pricing_upstream_apply.png",
+    "out": "diff_pricing_upstream_apply.png"
+  },
+  {
+    "label": "pricing_upstream_search",
+    "a": "realmoi_pricing_upstream_search.png",
+    "b": "newapi_pricing_upstream_search.png",
+    "out": "diff_pricing_upstream_search.png"
+  },
+  {
+    "label": "pricing_upstream_filter",
+    "a": "realmoi_pricing_upstream_filter.png",
+    "b": "newapi_pricing_upstream_filter.png",
+    "out": "diff_pricing_upstream_filter.png"
+  },
+  {
+    "label": "pricing_upstream_empty",
+    "a": "realmoi_pricing_upstream_empty.png",
+    "b": "newapi_pricing_upstream_empty.png",
+    "out": "diff_pricing_upstream_empty.png"
+  }
+]

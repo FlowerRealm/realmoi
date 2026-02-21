@@ -1,5 +1,13 @@
 from __future__ import annotations
 
+"""JobManager local-executor behavioral tests.
+
+These tests cover:
+- local generate/test execution in mock mode
+- reconcile behavior for missing local processes
+- independent judge queue/claim lifecycle
+"""
+
 import json
 import os
 from pathlib import Path
@@ -7,11 +15,25 @@ import subprocess
 import sys
 import time
 
+from backend.app import db as db_module
+from backend.app.services import job_manager as job_manager_module
+from backend.app.services.codex_config import build_effective_config
+from backend.app.services.job_paths import get_job_paths
+from backend.app.services.job_state import load_state, now_iso, save_state
+from backend.app.settings import SETTINGS
 
-def _write_job_and_state(*, jobs_root: Path, job_id: str, owner_user_id: str, model: str) -> Path:
-    from backend.app.services.job_paths import get_job_paths  # noqa: WPS433
-    from backend.app.services.job_state import now_iso, save_state  # noqa: WPS433
 
+def set_settings_local(monkeypatch, *, judge_mode: str | None = None, mock_mode: bool | None = None, runner_generate_script: str | None = None):
+    monkeypatch.setattr(SETTINGS, "runner_executor", "local")
+    if judge_mode is not None:
+        monkeypatch.setattr(SETTINGS, "judge_mode", judge_mode)
+    if mock_mode is not None:
+        monkeypatch.setattr(SETTINGS, "mock_mode", mock_mode)
+    if runner_generate_script is not None:
+        monkeypatch.setattr(SETTINGS, "runner_generate_script", runner_generate_script)
+
+
+def write_job_and_state(*, jobs_root: Path, job_id: str, owner_user_id: str, model: str) -> Path:
     paths = get_job_paths(jobs_root=jobs_root, job_id=job_id)
     paths.root.mkdir(parents=True, exist_ok=True)
     paths.input_dir.mkdir(parents=True, exist_ok=True)
@@ -71,21 +93,16 @@ def _write_job_and_state(*, jobs_root: Path, job_id: str, owner_user_id: str, mo
 
 
 def test_local_generate_and_test_success(client, monkeypatch, tmp_path):  # noqa: ARG001
-    from backend.app.services import job_manager as job_manager_module  # noqa: WPS433
-    from backend.app.services.job_paths import get_job_paths  # noqa: WPS433
-    from backend.app.settings import SETTINGS  # noqa: WPS433
-
-    monkeypatch.setattr(SETTINGS, "runner_executor", "local")
-    monkeypatch.setattr(SETTINGS, "mock_mode", True)
+    set_settings_local(monkeypatch, mock_mode=True)
 
     job_id = "job-local-success"
-    _write_job_and_state(jobs_root=tmp_path, job_id=job_id, owner_user_id="u1", model="gpt-local")
+    write_job_and_state(jobs_root=tmp_path, job_id=job_id, owner_user_id="u1", model="gpt-local")
 
     jm = job_manager_module.JobManager(jobs_root=tmp_path)
     paths = get_job_paths(jobs_root=tmp_path, job_id=job_id)
 
-    jm._run_generate(paths=paths, owner_user_id="u1", attempt=1, prompt_mode="generate")
-    jm._run_test(paths=paths, owner_user_id="u1", attempt=1)
+    jm.run_generate(paths=paths, owner_user_id="u1", attempt=1, prompt_mode="generate")
+    jm.run_test(paths=paths, owner_user_id="u1", attempt=1)
 
     state = json.loads(paths.state_json.read_text(encoding="utf-8"))
     assert str(state["containers"]["generate"]["id"]).startswith("local-generate-pid-")
@@ -97,17 +114,10 @@ def test_local_generate_and_test_success(client, monkeypatch, tmp_path):  # noqa
 
 
 def test_reconcile_marks_running_local_jobs_failed(client, monkeypatch, tmp_path):  # noqa: ARG001
-    from backend.app.services import job_manager as job_manager_module  # noqa: WPS433
-    from backend.app.services.job_paths import get_job_paths  # noqa: WPS433
-    from backend.app.services.job_state import load_state, save_state  # noqa: WPS433
-    from backend.app.settings import SETTINGS  # noqa: WPS433
-
-    monkeypatch.setattr(SETTINGS, "runner_executor", "local")
-    monkeypatch.setattr(SETTINGS, "judge_mode", "embedded")
-    monkeypatch.setattr(SETTINGS, "mock_mode", True)
+    set_settings_local(monkeypatch, judge_mode="embedded", mock_mode=True)
 
     job_id = "job-local-reconcile"
-    _write_job_and_state(jobs_root=tmp_path, job_id=job_id, owner_user_id="u1", model="gpt-local")
+    write_job_and_state(jobs_root=tmp_path, job_id=job_id, owner_user_id="u1", model="gpt-local")
     paths = get_job_paths(jobs_root=tmp_path, job_id=job_id)
     state = load_state(paths.state_json)
     state["status"] = "running_generate"
@@ -123,22 +133,16 @@ def test_reconcile_marks_running_local_jobs_failed(client, monkeypatch, tmp_path
 
 
 def test_local_generate_raises_when_runner_returns_non_zero(client, monkeypatch, tmp_path):  # noqa: ARG001
-    from backend.app.services import job_manager as job_manager_module  # noqa: WPS433
-    from backend.app.services.job_paths import get_job_paths  # noqa: WPS433
-    from backend.app.settings import SETTINGS  # noqa: WPS433
-
-    monkeypatch.setattr(SETTINGS, "runner_executor", "local")
-    monkeypatch.setattr(SETTINGS, "mock_mode", True)
-    monkeypatch.setattr(SETTINGS, "runner_generate_script", "runner/app/runner_test.py")
+    set_settings_local(monkeypatch, mock_mode=True, runner_generate_script="runner/app/runner_test.py")
 
     job_id = "job-local-generate-fail"
-    _write_job_and_state(jobs_root=tmp_path, job_id=job_id, owner_user_id="u1", model="gpt-local")
+    write_job_and_state(jobs_root=tmp_path, job_id=job_id, owner_user_id="u1", model="gpt-local")
 
     jm = job_manager_module.JobManager(jobs_root=tmp_path)
     paths = get_job_paths(jobs_root=tmp_path, job_id=job_id)
 
     try:
-        jm._run_generate(paths=paths, owner_user_id="u1", attempt=1, prompt_mode="generate")
+        jm.run_generate(paths=paths, owner_user_id="u1", attempt=1, prompt_mode="generate")
     except RuntimeError as e:
         assert str(e) == "generate_failed"
     else:
@@ -146,16 +150,10 @@ def test_local_generate_raises_when_runner_returns_non_zero(client, monkeypatch,
 
 
 def test_start_job_queues_when_independent_mode(client, monkeypatch, tmp_path):  # noqa: ARG001
-    from backend.app.services import job_manager as job_manager_module  # noqa: WPS433
-    from backend.app.services.job_paths import get_job_paths  # noqa: WPS433
-    from backend.app.services.job_state import load_state  # noqa: WPS433
-    from backend.app.settings import SETTINGS  # noqa: WPS433
-
-    monkeypatch.setattr(SETTINGS, "runner_executor", "local")
-    monkeypatch.setattr(SETTINGS, "judge_mode", "independent")
+    set_settings_local(monkeypatch, judge_mode="independent")
 
     job_id = "job-queued-mode"
-    _write_job_and_state(jobs_root=tmp_path, job_id=job_id, owner_user_id="u1", model="gpt-local")
+    write_job_and_state(jobs_root=tmp_path, job_id=job_id, owner_user_id="u1", model="gpt-local")
     jm = job_manager_module.JobManager(jobs_root=tmp_path)
 
     state = jm.start_job(job_id=job_id, owner_user_id="u1")
@@ -167,16 +165,10 @@ def test_start_job_queues_when_independent_mode(client, monkeypatch, tmp_path): 
 
 
 def test_independent_judge_claim_and_release_lock(client, monkeypatch, tmp_path):  # noqa: ARG001
-    from backend.app.services import job_manager as job_manager_module  # noqa: WPS433
-    from backend.app.services.job_paths import get_job_paths  # noqa: WPS433
-    from backend.app.services.job_state import load_state, save_state  # noqa: WPS433
-    from backend.app.settings import SETTINGS  # noqa: WPS433
-
-    monkeypatch.setattr(SETTINGS, "runner_executor", "local")
-    monkeypatch.setattr(SETTINGS, "judge_mode", "independent")
+    set_settings_local(monkeypatch, judge_mode="independent")
 
     job_id = "job-claim-once"
-    _write_job_and_state(jobs_root=tmp_path, job_id=job_id, owner_user_id="u1", model="gpt-local")
+    write_job_and_state(jobs_root=tmp_path, job_id=job_id, owner_user_id="u1", model="gpt-local")
     jm = job_manager_module.JobManager(jobs_root=tmp_path)
     jm.start_job(job_id=job_id, owner_user_id="u1")
 
@@ -184,7 +176,8 @@ def test_independent_judge_claim_and_release_lock(client, monkeypatch, tmp_path)
     assert claimed is not None
     assert claimed["job_id"] == job_id
     assert Path(claimed["lock_path"]).exists()
-    assert str(claimed.get("claim_id") or "")
+    assert "claim_id" in claimed
+    assert str(claimed["claim_id"] or "")
 
     def _fake_run_job_thread(*, job_id: str, owner_user_id: str) -> None:  # noqa: ARG001
         paths = get_job_paths(jobs_root=tmp_path, job_id=job_id)
@@ -192,7 +185,7 @@ def test_independent_judge_claim_and_release_lock(client, monkeypatch, tmp_path)
         state["status"] = "succeeded"
         save_state(paths.state_json, state)
 
-    monkeypatch.setattr(jm, "_run_job_thread", _fake_run_job_thread)
+    monkeypatch.setattr(jm, "run_job_thread", _fake_run_job_thread)
     jm.run_claimed_job(job_id=claimed["job_id"], owner_user_id=claimed["owner_user_id"])
     assert jm.release_judge_claim(job_id=claimed["job_id"], claim_id=str(claimed["claim_id"])) is True
 
@@ -202,17 +195,10 @@ def test_independent_judge_claim_and_release_lock(client, monkeypatch, tmp_path)
 
 
 def test_reconcile_keeps_running_local_jobs_in_independent_mode(client, monkeypatch, tmp_path):  # noqa: ARG001
-    from backend.app.services import job_manager as job_manager_module  # noqa: WPS433
-    from backend.app.services.job_paths import get_job_paths  # noqa: WPS433
-    from backend.app.services.job_state import load_state, save_state  # noqa: WPS433
-    from backend.app.settings import SETTINGS  # noqa: WPS433
-
-    monkeypatch.setattr(SETTINGS, "runner_executor", "local")
-    monkeypatch.setattr(SETTINGS, "judge_mode", "independent")
-    monkeypatch.setattr(SETTINGS, "mock_mode", True)
+    set_settings_local(monkeypatch, judge_mode="independent", mock_mode=True)
 
     job_id = "job-local-reconcile-independent"
-    _write_job_and_state(jobs_root=tmp_path, job_id=job_id, owner_user_id="u1", model="gpt-local")
+    write_job_and_state(jobs_root=tmp_path, job_id=job_id, owner_user_id="u1", model="gpt-local")
     paths = get_job_paths(jobs_root=tmp_path, job_id=job_id)
     state = load_state(paths.state_json)
     state["status"] = "running_generate"
@@ -227,13 +213,7 @@ def test_reconcile_keeps_running_local_jobs_in_independent_mode(client, monkeypa
 
 
 def test_cancel_job_stops_local_pid_from_state(client, monkeypatch, tmp_path):  # noqa: ARG001
-    from backend.app.services import job_manager as job_manager_module  # noqa: WPS433
-    from backend.app.services.job_paths import get_job_paths  # noqa: WPS433
-    from backend.app.services.job_state import load_state, save_state  # noqa: WPS433
-    from backend.app.settings import SETTINGS  # noqa: WPS433
-
-    monkeypatch.setattr(SETTINGS, "runner_executor", "local")
-    monkeypatch.setattr(SETTINGS, "judge_mode", "independent")
+    set_settings_local(monkeypatch, judge_mode="independent")
 
     proc = subprocess.Popen(  # noqa: S603
         [sys.executable, "-c", "import time; time.sleep(30)"],
@@ -241,7 +221,7 @@ def test_cancel_job_stops_local_pid_from_state(client, monkeypatch, tmp_path):  
     )
     try:
         job_id = "job-cancel-by-state-pid"
-        _write_job_and_state(jobs_root=tmp_path, job_id=job_id, owner_user_id="u1", model="gpt-local")
+        write_job_and_state(jobs_root=tmp_path, job_id=job_id, owner_user_id="u1", model="gpt-local")
         paths = get_job_paths(jobs_root=tmp_path, job_id=job_id)
         state = load_state(paths.state_json)
         state["status"] = "running_generate"
@@ -266,24 +246,19 @@ def test_cancel_job_stops_local_pid_from_state(client, monkeypatch, tmp_path):  
 
 
 def test_generate_bundle_provider_avoids_db_access(client, monkeypatch, tmp_path):  # noqa: ARG001
-    from backend.app.services import job_manager as job_manager_module  # noqa: WPS433
-    from backend.app.services.job_paths import get_job_paths  # noqa: WPS433
-    from backend.app.settings import SETTINGS  # noqa: WPS433
-
-    monkeypatch.setattr(SETTINGS, "runner_executor", "local")
-    monkeypatch.setattr(SETTINGS, "mock_mode", True)
+    set_settings_local(monkeypatch, mock_mode=True)
 
     job_id = "job-local-bundle-provider"
-    _write_job_and_state(jobs_root=tmp_path, job_id=job_id, owner_user_id="u1", model="gpt-local")
+    write_job_and_state(jobs_root=tmp_path, job_id=job_id, owner_user_id="u1", model="gpt-local")
     paths = get_job_paths(jobs_root=tmp_path, job_id=job_id)
 
-    class _BoomSessionLocal:  # noqa: WPS431
+    class BoomSessionLocal:  # noqa: WPS431
         def __call__(self, *args, **kwargs):  # noqa: ARG002
             raise AssertionError("SessionLocal should not be used when provider is set")
 
-    monkeypatch.setattr(job_manager_module, "SessionLocal", _BoomSessionLocal())
+    monkeypatch.setattr(db_module, "SessionLocal", BoomSessionLocal())
 
-    cfg = job_manager_module.build_effective_config(user_overrides_toml="")
+    cfg = build_effective_config(user_overrides_toml="")
     bundle = job_manager_module.GenerateBundle(
         effective_config_toml=cfg.effective_config_toml,
         auth_json_bytes=b"{}\n",
@@ -303,6 +278,6 @@ def test_generate_bundle_provider_avoids_db_access(client, monkeypatch, tmp_path
         usage_reporter=_usage_reporter,
     )
 
-    jm._run_generate(paths=paths, owner_user_id="u1", attempt=1, prompt_mode="generate")
+    jm.run_generate(paths=paths, owner_user_id="u1", attempt=1, prompt_mode="generate")
     state = json.loads(paths.state_json.read_text(encoding="utf-8"))
     assert state["containers"]["generate"]["exit_code"] == 0

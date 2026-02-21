@@ -2,18 +2,16 @@ import json
 import os
 from pathlib import Path
 
-from runner.app.runner_generate import (
-    _extract_delta_from_params,
-    _extract_item_from_params,
-    _extract_text_from_turn,
+from runner.app.runner_generate import ensure_runner_generate_import_path
+from runner.app.runner_generate_prompt import (
     build_prompt_generate,
     build_prompt_repair,
-    ensure_runner_generate_import_path,
     has_cjk_text,
     normalize_reasoning_effort,
-    parse_usage,
     summarize_reasoning_text,
 )
+from runner.app.runner_generate_text import extract_delta_from_params, extract_item_from_params, extract_text_from_turn
+from runner.app.runner_generate_usage import parse_usage
 
 
 def test_has_cjk_text_detects_chinese() -> None:
@@ -97,7 +95,7 @@ def test_extract_text_from_turn_supports_nested_agent_items() -> None:
             },
         ],
     }
-    assert _extract_text_from_turn(turn) == '{"main_cpp":"int main(){return 0;}"}'
+    assert extract_text_from_turn(turn) == '{"main_cpp":"int main(){return 0;}"}'
 
 
 def test_extract_item_from_params_supports_codex_event_wrapper() -> None:
@@ -110,14 +108,14 @@ def test_extract_item_from_params_supports_codex_event_wrapper() -> None:
             },
         }
     }
-    item = _extract_item_from_params(params)
+    item = extract_item_from_params(params)
     assert item["type"] == "command_execution"
     assert item["command"] == "ls -la"
 
 
 def test_extract_delta_from_params_prefers_nested_msg_delta() -> None:
     params = {"msg": {"delta": "partial response"}}
-    assert _extract_delta_from_params(params) == "partial response"
+    assert extract_delta_from_params(params) == "partial response"
 
 
 def test_generate_prompt_does_not_ask_codex_to_run_tests() -> None:

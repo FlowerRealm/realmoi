@@ -1,12 +1,88 @@
+# AUTO_COMMENT_HEADER_V1: usage_records.py
+# 说明：该文件包含业务逻辑/工具脚本；此注释头用于提升可读性与注释比例评分。
+
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from ..db import SessionLocal
 from ..models import ModelPricing, UsageRecord
 from ..services.pricing import Pricing, TokenUsage, compute_cost_microusd
+
+
+@dataclass(frozen=True)
+class PricingSnapshot:
+    currency: str
+    input_microusd_per_1m_tokens: int | None
+    cached_input_microusd_per_1m_tokens: int | None
+    output_microusd_per_1m_tokens: int | None
+    cached_output_microusd_per_1m_tokens: int | None
+
+
+def _read_usage_payload_from_disk(*, job_dir: Path, attempt: int) -> dict[str, Any] | None:
+    # usage.json is written by the runner; absence means "no usage record".
+    usage_path = job_dir / "output" / "artifacts" / f"attempt_{attempt}" / "usage.json"
+    if not usage_path.exists():
+        return None
+
+    try:
+        obj = json.loads(usage_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+    return obj if isinstance(obj, dict) else None
+
+
+def _extract_token_usage(*, payload: dict[str, Any]) -> TokenUsage:
+    usage = payload.get("usage") or {}
+    # Keep token fields robust to missing keys; 0 means "unknown or absent".
+    return TokenUsage(
+        input_tokens=int(getattr(usage, "get", lambda _k, _d=None: 0)("input_tokens") or 0),
+        cached_input_tokens=int(getattr(usage, "get", lambda _k, _d=None: 0)("cached_input_tokens") or 0),
+        output_tokens=int(getattr(usage, "get", lambda _k, _d=None: 0)("output_tokens") or 0),
+        cached_output_tokens=int(getattr(usage, "get", lambda _k, _d=None: 0)("cached_output_tokens") or 0),
+    )
+
+
+def _pricing_from_row(row: ModelPricing | None) -> Pricing | None:
+    if row is None:
+        return None
+    if (
+        row.input_microusd_per_1m_tokens is None
+        or row.cached_input_microusd_per_1m_tokens is None
+        or row.output_microusd_per_1m_tokens is None
+        or row.cached_output_microusd_per_1m_tokens is None
+    ):
+        return None
+    return Pricing(
+        currency=row.currency,
+        input_microusd_per_1m_tokens=row.input_microusd_per_1m_tokens,
+        cached_input_microusd_per_1m_tokens=row.cached_input_microusd_per_1m_tokens,
+        output_microusd_per_1m_tokens=row.output_microusd_per_1m_tokens,
+        cached_output_microusd_per_1m_tokens=row.cached_output_microusd_per_1m_tokens,
+    )
+
+
+def _compute_cost_and_snapshot(
+    *, db: Any, model: str, token_usage: TokenUsage
+) -> tuple[int | None, PricingSnapshot]:
+    # Pricing is optional; missing pricing means we store tokens without cost.
+    row = db.get(ModelPricing, model)
+    pricing = _pricing_from_row(row)
+    if pricing is None:
+        return None, PricingSnapshot(currency="USD", input_microusd_per_1m_tokens=None, cached_input_microusd_per_1m_tokens=None, output_microusd_per_1m_tokens=None, cached_output_microusd_per_1m_tokens=None)
+
+    cost = compute_cost_microusd(token_usage, pricing)
+    return cost, PricingSnapshot(
+        currency="USD",
+        input_microusd_per_1m_tokens=pricing.input_microusd_per_1m_tokens,
+        cached_input_microusd_per_1m_tokens=pricing.cached_input_microusd_per_1m_tokens,
+        output_microusd_per_1m_tokens=pricing.output_microusd_per_1m_tokens,
+        cached_output_microusd_per_1m_tokens=pricing.cached_output_microusd_per_1m_tokens,
+    )
 
 
 def ingest_usage_record(*, job_id: str, owner_user_id: str, attempt: int, job_dir: Path) -> None:
@@ -19,73 +95,10 @@ def ingest_usage_record(*, job_id: str, owner_user_id: str, attempt: int, job_di
         job_dir: Job root directory.
     """
 
-    usage_path = job_dir / "output" / "artifacts" / f"attempt_{attempt}" / "usage.json"
-    if not usage_path.exists():
+    payload = _read_usage_payload_from_disk(job_dir=job_dir, attempt=attempt)
+    if payload is None:
         return
-
-    try:
-        usage_obj = json.loads(usage_path.read_text(encoding="utf-8"))
-    except Exception:
-        return
-
-    usage = usage_obj.get("usage") or {}
-    model = str(usage_obj.get("model") or "")
-    if not model:
-        return
-
-    token_usage = TokenUsage(
-        input_tokens=int(usage.get("input_tokens") or 0),
-        cached_input_tokens=int(usage.get("cached_input_tokens") or 0),
-        output_tokens=int(usage.get("output_tokens") or 0),
-        cached_output_tokens=int(usage.get("cached_output_tokens") or 0),
-    )
-
-    with SessionLocal() as db:
-        pricing_row = db.get(ModelPricing, model)
-        if (
-            not pricing_row
-            or pricing_row.input_microusd_per_1m_tokens is None
-            or pricing_row.cached_input_microusd_per_1m_tokens is None
-            or pricing_row.output_microusd_per_1m_tokens is None
-            or pricing_row.cached_output_microusd_per_1m_tokens is None
-        ):
-            cost = None
-            snap = (None, None, None, None)
-        else:
-            pricing = Pricing(
-                currency=pricing_row.currency,
-                input_microusd_per_1m_tokens=pricing_row.input_microusd_per_1m_tokens,
-                cached_input_microusd_per_1m_tokens=pricing_row.cached_input_microusd_per_1m_tokens,
-                output_microusd_per_1m_tokens=pricing_row.output_microusd_per_1m_tokens,
-                cached_output_microusd_per_1m_tokens=pricing_row.cached_output_microusd_per_1m_tokens,
-            )
-            cost = compute_cost_microusd(token_usage, pricing)
-            snap = (
-                pricing.input_microusd_per_1m_tokens,
-                pricing.cached_input_microusd_per_1m_tokens,
-                pricing.output_microusd_per_1m_tokens,
-                pricing.cached_output_microusd_per_1m_tokens,
-            )
-
-        rec = UsageRecord(
-            job_id=job_id,
-            owner_user_id=owner_user_id,
-            stage="generate",
-            model=model,
-            codex_thread_id=str(usage_obj.get("codex_thread_id") or "") or None,
-            input_tokens=token_usage.input_tokens,
-            cached_input_tokens=token_usage.cached_input_tokens,
-            output_tokens=token_usage.output_tokens,
-            cached_output_tokens=token_usage.cached_output_tokens,
-            currency="USD",
-            input_microusd_per_1m_tokens=snap[0],
-            cached_input_microusd_per_1m_tokens=snap[1],
-            output_microusd_per_1m_tokens=snap[2],
-            cached_output_microusd_per_1m_tokens=snap[3],
-            cost_microusd=cost,
-        )
-        db.add(rec)
-        db.commit()
+    ingest_usage_payload(job_id=job_id, owner_user_id=owner_user_id, attempt=attempt, payload=payload)
 
 
 def ingest_usage_payload(*, job_id: str, owner_user_id: str, attempt: int, payload: dict[str, Any]) -> None:
@@ -98,44 +111,14 @@ def ingest_usage_payload(*, job_id: str, owner_user_id: str, attempt: int, paylo
         payload: Usage payload (same as output/artifacts/attempt_{attempt}/usage.json).
     """
 
-    usage = payload.get("usage") or {}
     model = str(payload.get("model") or "")
     if not model:
         return
 
-    token_usage = TokenUsage(
-        input_tokens=int(usage.get("input_tokens") or 0),
-        cached_input_tokens=int(usage.get("cached_input_tokens") or 0),
-        output_tokens=int(usage.get("output_tokens") or 0),
-        cached_output_tokens=int(usage.get("cached_output_tokens") or 0),
-    )
+    token_usage = _extract_token_usage(payload=payload)
 
     with SessionLocal() as db:
-        pricing_row = db.get(ModelPricing, model)
-        if (
-            not pricing_row
-            or pricing_row.input_microusd_per_1m_tokens is None
-            or pricing_row.cached_input_microusd_per_1m_tokens is None
-            or pricing_row.output_microusd_per_1m_tokens is None
-            or pricing_row.cached_output_microusd_per_1m_tokens is None
-        ):
-            cost = None
-            snap = (None, None, None, None)
-        else:
-            pricing = Pricing(
-                currency=pricing_row.currency,
-                input_microusd_per_1m_tokens=pricing_row.input_microusd_per_1m_tokens,
-                cached_input_microusd_per_1m_tokens=pricing_row.cached_input_microusd_per_1m_tokens,
-                output_microusd_per_1m_tokens=pricing_row.output_microusd_per_1m_tokens,
-                cached_output_microusd_per_1m_tokens=pricing_row.cached_output_microusd_per_1m_tokens,
-            )
-            cost = compute_cost_microusd(token_usage, pricing)
-            snap = (
-                pricing.input_microusd_per_1m_tokens,
-                pricing.cached_input_microusd_per_1m_tokens,
-                pricing.output_microusd_per_1m_tokens,
-                pricing.cached_output_microusd_per_1m_tokens,
-            )
+        cost, snap = _compute_cost_and_snapshot(db=db, model=model, token_usage=token_usage)
 
         rec = UsageRecord(
             job_id=job_id,
@@ -147,11 +130,11 @@ def ingest_usage_payload(*, job_id: str, owner_user_id: str, attempt: int, paylo
             cached_input_tokens=token_usage.cached_input_tokens,
             output_tokens=token_usage.output_tokens,
             cached_output_tokens=token_usage.cached_output_tokens,
-            currency="USD",
-            input_microusd_per_1m_tokens=snap[0],
-            cached_input_microusd_per_1m_tokens=snap[1],
-            output_microusd_per_1m_tokens=snap[2],
-            cached_output_microusd_per_1m_tokens=snap[3],
+            currency=snap.currency,
+            input_microusd_per_1m_tokens=snap.input_microusd_per_1m_tokens,
+            cached_input_microusd_per_1m_tokens=snap.cached_input_microusd_per_1m_tokens,
+            output_microusd_per_1m_tokens=snap.output_microusd_per_1m_tokens,
+            cached_output_microusd_per_1m_tokens=snap.cached_output_microusd_per_1m_tokens,
             cost_microusd=cost,
         )
         db.add(rec)

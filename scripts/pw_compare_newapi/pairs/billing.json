@@ -1,0 +1,44 @@
+[
+  {
+    "label": "billing_date_range",
+    "a": "realmoi_billing_date_range.png",
+    "b": "newapi_billing_date_range.png",
+    "out": "diff_billing_date_range.png"
+  },
+  {
+    "label": "billing_token",
+    "a": "realmoi_billing_token.png",
+    "b": "newapi_billing_token.png",
+    "out": "diff_billing_token.png"
+  },
+  {
+    "label": "billing_select",
+    "a": "realmoi_billing_select.png",
+    "b": "newapi_billing_select.png",
+    "out": "diff_billing_select.png"
+  },
+  {
+    "label": "billing_btn_query",
+    "a": "realmoi_billing_btn_query.png",
+    "b": "newapi_billing_btn_query.png",
+    "out": "diff_billing_btn_query.png"
+  },
+  {
+    "label": "billing_btn_reset",
+    "a": "realmoi_billing_btn_reset.png",
+    "b": "newapi_billing_btn_reset.png",
+    "out": "diff_billing_btn_reset.png"
+  },
+  {
+    "label": "billing_btn_cols",
+    "a": "realmoi_billing_btn_cols.png",
+    "b": "newapi_billing_btn_cols.png",
+    "out": "diff_billing_btn_cols.png"
+  },
+  {
+    "label": "billing_th",
+    "a": "realmoi_billing_th.png",
+    "b": "newapi_billing_th.png",
+    "out": "diff_billing_th.png"
+  }
+]

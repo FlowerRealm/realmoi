@@ -1,0 +1,200 @@
+async (page) => {
+const label = "__LABEL__";
+const url = "__URL__";
+const apiBase = "__API_BASE__".replace(/\/$/, "");
+
+const corsHeaders = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
+  "access-control-allow-headers": "*",
+  "access-control-max-age": "600",
+};
+
+const me = { id: "u_user", username: "user", role: "user", is_disabled: false };
+
+const eventsPayload = {
+  query: { start: "2026-02-01", end: "2026-02-02", limit: 50, before_id: null },
+  events: [
+    {
+      id: "rec_1",
+      created_at: "2026-02-13 00:00:00",
+      job_id: "job_1",
+      stage: "solve",
+      model: "gpt-4o-mini",
+      input_tokens: 120,
+      cached_input_tokens: 0,
+      output_tokens: 80,
+      cached_output_tokens: 0,
+      total_tokens: 200,
+      cached_tokens: 0,
+      cost: { currency: "USD", cost_microusd: 1000, amount: "0.0010" },
+    },
+  ],
+  next_before_id: null,
+};
+
+await page.route(`${apiBase}/**`, async (route) => {
+  const req = route.request();
+  const requestUrl = req.url();
+  if (req.method() === "OPTIONS") {
+    await route.fulfill({ status: 204, headers: corsHeaders, body: "" });
+    return;
+  }
+
+  if (requestUrl === `${apiBase}/auth/me`) {
+    await route.fulfill({
+      status: 200,
+      headers: { "content-type": "application/json; charset=utf-8", ...corsHeaders },
+      body: JSON.stringify(me),
+    });
+    return;
+  }
+
+  if (requestUrl.startsWith(`${apiBase}/billing/events`)) {
+    await route.fulfill({
+      status: 200,
+      headers: { "content-type": "application/json; charset=utf-8", ...corsHeaders },
+      body: JSON.stringify(eventsPayload),
+    });
+    return;
+  }
+
+  await route.continue();
+});
+
+await page.addInitScript(() => {
+  try { localStorage.setItem("realmoi_token", "test-token"); } catch {}
+});
+
+await page.goto(url, { waitUntil: "domcontentloaded" });
+await page.waitForTimeout(900);
+
+await page.addStyleTag({
+  content: `
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+    .semi-toast, .semi-toast-wrapper, .semi-notification, .semi-notification-list { display: none !important; }
+  `,
+});
+
+await page.evaluate(() => {
+  const normalize = (s) => String(s || "").replace(/\s+/g, "");
+  const scope = document.querySelector(".table-scroll-card") || document.body;
+
+  const rangeInput = scope.querySelector(".semi-datepicker-range-input") || scope.querySelector(".semi-datepicker-range");
+  if (rangeInput) {
+    rangeInput.setAttribute("data-pw-target", "billing-date-range");
+    const inputs = Array.from(rangeInput.querySelectorAll("input"));
+    for (const i of inputs) {
+      try { i.value = ""; } catch {}
+      i.setAttribute("placeholder", "Placeholder");
+    }
+  }
+
+  const tokenInput =
+    scope.querySelector('input[placeholder*="令牌名称"]') ||
+    scope.querySelector('input[placeholder*="token"]');
+  const tokenWrap = tokenInput ? tokenInput.closest(".semi-input-wrapper") : null;
+  if (tokenWrap && tokenInput) {
+    tokenWrap.setAttribute("data-pw-target", "billing-token");
+    tokenInput.value = "";
+    tokenInput.setAttribute("placeholder", "Placeholder");
+  }
+
+  const select = scope.querySelector("form .semi-select");
+  if (select) {
+    select.setAttribute("data-pw-target", "billing-select");
+    const txt =
+      select.querySelector(".semi-select-selection-text") ||
+      select.querySelector(".semi-select-selection-placeholder");
+    if (txt) txt.textContent = "Option";
+  }
+
+  const btnQuery = Array.from(scope.querySelectorAll("button")).find(
+    (el) => normalize(el.textContent) === normalize("查询"),
+  );
+  if (btnQuery) {
+    btnQuery.setAttribute("data-pw-target", "billing-btn-query");
+    const content = btnQuery.querySelector(".semi-button-content") || btnQuery;
+    content.textContent = "Query";
+  }
+
+  const btnReset = Array.from(scope.querySelectorAll("button")).find(
+    (el) => normalize(el.textContent) === normalize("重置"),
+  );
+  if (btnReset) {
+    btnReset.setAttribute("data-pw-target", "billing-btn-reset");
+    const content = btnReset.querySelector(".semi-button-content") || btnReset;
+    content.textContent = "Reset";
+  }
+
+  const btnCols = Array.from(scope.querySelectorAll("button")).find(
+    (el) => normalize(el.textContent) === normalize("列设置"),
+  );
+  if (btnCols) {
+    btnCols.setAttribute("data-pw-target", "billing-btn-cols");
+    const content = btnCols.querySelector(".semi-button-content") || btnCols;
+    content.textContent = "Cols";
+  }
+
+  const th = scope.querySelector(".semi-table-thead th") || scope.querySelector("thead th");
+  if (th) {
+    th.setAttribute("data-pw-target", "billing-th");
+    th.textContent = "Header";
+  }
+});
+
+await page.addStyleTag({
+  content: `
+    [data-pw-target="billing-date-range"] { width: 360px !important; height: 32px !important; }
+    [data-pw-target="billing-date-range"] input { height: 32px !important; line-height: 32px !important; }
+    [data-pw-target="billing-token"] { width: 240px !important; height: 32px !important; }
+    [data-pw-target="billing-token"] input { height: 32px !important; line-height: 32px !important; }
+    [data-pw-target="billing-select"] { width: 160px !important; height: 32px !important; }
+    [data-pw-target="billing-btn-query"] { width: 120px !important; height: 32px !important; justify-content: center !important; }
+    [data-pw-target="billing-btn-reset"] { width: 120px !important; height: 32px !important; justify-content: center !important; }
+    [data-pw-target="billing-btn-cols"] { width: 120px !important; height: 32px !important; justify-content: center !important; }
+    [data-pw-target="billing-th"] { width: 220px !important; height: 44px !important; vertical-align: middle !important; }
+  `,
+});
+
+await page.evaluate(async () => {
+  if (!document.fonts || !document.fonts.ready) return;
+  try { await document.fonts.ready; } catch {}
+});
+await page.waitForTimeout(200);
+
+const targets = [
+  ["billing_date_range", '[data-pw-target="billing-date-range"]'],
+  ["billing_token", '[data-pw-target="billing-token"]'],
+  ["billing_select", '[data-pw-target="billing-select"]'],
+  ["billing_btn_query", '[data-pw-target="billing-btn-query"]'],
+  ["billing_btn_reset", '[data-pw-target="billing-btn-reset"]'],
+  ["billing_btn_cols", '[data-pw-target="billing-btn-cols"]'],
+  ["billing_th", '[data-pw-target="billing-th"]'],
+];
+
+for (const [name, sel] of targets) {
+  const loc = page.locator(sel).first();
+  await loc.waitFor({ state: "visible", timeout: 15000 });
+  await loc.scrollIntoViewIfNeeded();
+  if (name === "billing_select" || name.startsWith("billing_btn_")) {
+    const box = await loc.boundingBox();
+    if (box) {
+      const inset = 1;
+      await page.screenshot({
+        path: `${label}_${name}.png`,
+        clip: {
+          x: Math.round(box.x) + inset,
+          y: Math.round(box.y) + inset,
+          width: Math.max(1, Math.round(box.width) - inset * 2),
+          height: Math.max(1, Math.round(box.height) - inset * 2),
+        },
+      });
+      continue;
+    }
+  }
+  await loc.screenshot({ path: `${label}_${name}.png` });
+}
+
+return { ok: true };
+}
