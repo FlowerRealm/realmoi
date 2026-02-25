@@ -4,6 +4,10 @@
 
 | 时间戳 | 名称 | 类型 | 涉及模块 | 决策 | 结果 |
 |--------|------|------|---------|------|------|
+| 202602241900 | fix-make-dev-start-judge | - | - | - | ✅完成 |
+| 202602241852 | fix-make-dev-port-diagnostics | - | - | - | ✅完成 |
+| 202602241841 | fix-make-dev-auto-ports | - | - | - | ✅完成 |
+| 202602241830 | fix-make-dev | - | - | - | ✅完成 |
 | 202602161334 | ui-layout-audit-fixes | implementation | frontend, scripts | ui-layout-audit-fixes#D001 | ✅完成 |
 | 202602161126 | playwright-ui-audit | - | - | - | ✅完成 |
 | 202602021229 | assistant-homepage | implementation | frontend | assistant-homepage#D001 | ✅完成 |

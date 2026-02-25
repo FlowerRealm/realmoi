@@ -31,6 +31,7 @@ make dev
 说明：
 - `make dev` 只做本地启动（Python venv + npm dev），不会执行 Docker 构建。
 - `make dev` 现在默认一键启动：后端 + 前端 + 独立测评机（`REALMOI_JUDGE_MODE=independent`）。
+- 若 `8000/3000` 端口被占用但检测到已运行的 realmoi backend 在监听（常见为 docker compose 栈），`make dev` 会复用该 backend 并继续启动剩余组件（frontend/judge）。若端口被占用但不符合复用条件，则会失败并打印诊断信息；也可通过 `BACKEND_PORT/FRONTEND_PORT` 显式覆盖端口。
 - Job 执行默认走本机 runner（`REALMOI_RUNNER_EXECUTOR=local`）。
 - 若你希望回到后端内线程执行，可显式设置 `REALMOI_JUDGE_MODE=embedded` 再执行 `make dev`。
 - 如需切换到 Docker runner，设置 `REALMOI_RUNNER_EXECUTOR=docker`，并确保 `REALMOI_RUNNER_IMAGE` 可用。

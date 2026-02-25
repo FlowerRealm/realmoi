@@ -2,6 +2,42 @@
 
 本项目使用语义化版本号（SemVer），并遵循 Keep a Changelog 的组织方式记录变更。
 
+## [0.2.130] - 2026-02-24
+
+### 修复
+
+- **[dev/make]**: `make dev` 在端口被占用且检测到已运行的 realmoi backend 监听时复用该 backend，并仍会自动确保独立 judge 运行（避免因“端口占用”导致 judge 不启动）
+  - 方案: [202602241900_fix-make-dev-start-judge](archive/2026-02/202602241900_fix-make-dev-start-judge/)
+
+### 验证
+
+- **[dev]**: `timeout 12 make dev`（在 backend:8000 已有监听时仍继续启动 frontend，并输出 judge 状态）
+
+## [0.2.129] - 2026-02-24
+
+### 修复
+
+- **[dev/make]**: `make dev` 在端口被占用且无可复用监听时失败并输出诊断信息（docker 容器/常见进程线索），避免“默默换端口”造成混淆
+  - 方案: [202602241852_fix-make-dev-port-diagnostics](archive/2026-02/202602241852_fix-make-dev-port-diagnostics/)
+
+### 验证
+
+- **[dev]**: `docker ps --filter publish=8000` 可定位占用端口的容器（例如：`realmoi-backend-1`）
+
+## [0.2.128] - 2026-02-24
+
+### 修复
+
+- **[dev/make]**: `make dev` 增加端口可用性预检查与后端就绪等待，避免“半启动”（后端失败但前端继续启动）
+  - 方案: [202602241830_fix-make-dev](archive/2026-02/202602241830_fix-make-dev/)
+- **[backend/judge]**: 独立 judge 的 MCP 连接握手异常不再导致崩溃，并确保其 API base 跟随 `BACKEND_PORT`
+  - 方案: [202602241830_fix-make-dev](archive/2026-02/202602241830_fix-make-dev/)
+
+### 验证
+
+- **[tests/backend]**: `.venv/bin/python -m pytest -q backend/tests/test_judge_mcp_client.py`（1 passed）
+- **[dev]**: `timeout 8 make dev BACKEND_PORT=8001 FRONTEND_PORT=3001`（可启动；timeout 结束后正常清理）
+
 ## [0.2.127] - 2026-02-21
 
 ### 维护

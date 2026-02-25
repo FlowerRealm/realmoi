@@ -149,7 +149,7 @@ class McpJudgeClient:
                 self._request("initialize", {})
                 print(f"[judge] mcp connected url={url}", flush=True)
                 return
-            except (OSError, TimeoutError, RuntimeError, ValueError) as e:
+            except Exception as e:
                 last_exc = e
                 self._state.ws = None
                 self._state.connected_url = ""
@@ -213,4 +213,3 @@ class McpJudgeClient:
 
     def call_tool(self, *, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         return self.request("tools/call", {"name": name, "arguments": arguments})
-

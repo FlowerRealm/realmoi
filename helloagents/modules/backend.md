@@ -100,6 +100,7 @@
 ## 本地开发
 
 - 推荐：项目根目录执行 `make dev`（本地安装依赖并启动后端/前端，不会触发 Docker 构建）
+- 若 `8000/3000` 端口被占用但检测到已运行的 realmoi backend 在监听：`make dev` 会复用该 backend 并继续启动剩余组件；否则会失败并打印诊断信息。也可使用 `make dev BACKEND_PORT=8001 FRONTEND_PORT=3001` 显式覆盖
 - 任务执行阶段仍会使用 `REALMOI_RUNNER_IMAGE` 创建容器（默认镜像按需自动拉取）
 - 单独启动后端：`uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000`
 

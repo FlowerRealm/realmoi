@@ -43,6 +43,7 @@ help:
 	@echo "  - Required for real Codex runs: valid upstream API key (env or admin channel config)."
 	@echo "  - make dev defaults to local runner execution (RUNNER_EXECUTOR=local) and starts judge in independent mode."
 	@echo "  - To force docker runner, set RUNNER_EXECUTOR=docker and ensure RUNNER_IMAGE exists."
+	@echo "  - If ports are busy, make dev may reuse existing listeners; otherwise stop the process (or docker compose stack) using them, or override BACKEND_PORT/FRONTEND_PORT."
 
 .PHONY: runner-build
 runner-build:
@@ -118,35 +119,175 @@ dev: backend-deps frontend-deps
 
 	source ".venv/bin/activate"
 
-	echo "[make] backend: http://localhost:$(BACKEND_PORT) (api: /api)"
-	echo "[make] runner executor: $${REALMOI_RUNNER_EXECUTOR}"
-	echo "[make] runner image (docker mode only): $${REALMOI_RUNNER_IMAGE}"
-	echo "[make] judge mode: $${REALMOI_JUDGE_MODE}"
-	uvicorn backend.app.main:app --reload --host "$(BACKEND_HOST)" --port "$(BACKEND_PORT)" &
-	BACKEND_PID=$$!
+	BACKEND_HOST="$(BACKEND_HOST)"
+	BACKEND_PORT="$(BACKEND_PORT)"
+	FRONTEND_PORT="$(FRONTEND_PORT)"
 
+	BACKEND_PID=0
+	FRONTEND_PID=0
 	JUDGE_PID=0
-	if [[ "$${REALMOI_JUDGE_MODE}" == "independent" ]]; then
-	  echo "[make] judge: starting independent daemon"
-	  python3 -X utf8 -m backend.app.judge_daemon &
-	  JUDGE_PID=$$!
-	fi
-
-	echo "[make] frontend: http://localhost:$(FRONTEND_PORT)"
-	cd "frontend"
-	export NEXT_PUBLIC_API_BASE_URL="$${NEXT_PUBLIC_API_BASE_URL:-http://localhost:$(BACKEND_PORT)/api}"
-	export PORT="$(FRONTEND_PORT)"
-	npm run dev &
-	FRONTEND_PID=$$!
-
 	cleanup() {
-	  kill "$${BACKEND_PID}" "$${FRONTEND_PID}" 2>/dev/null || true
+	  if [[ "$${BACKEND_PID}" -gt 0 ]]; then
+	    kill "$${BACKEND_PID}" 2>/dev/null || true
+	  fi
+	  if [[ "$${FRONTEND_PID}" -gt 0 ]]; then
+	    kill "$${FRONTEND_PID}" 2>/dev/null || true
+	  fi
 	  if [[ "$${JUDGE_PID}" -gt 0 ]]; then
 	    kill "$${JUDGE_PID}" 2>/dev/null || true
 	  fi
 	}
 	trap cleanup INT TERM EXIT
-	wait "$${BACKEND_PID}" "$${FRONTEND_PID}"
+
+	port_is_available() {
+	  local port="$$1"
+	  python3 -X utf8 -c 'import socket,sys; p=int(sys.argv[1]); s=socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1); s.bind(("0.0.0.0", p)); s.close()' "$$port" >/dev/null 2>&1
+	}
+
+	print_port_diagnostics() {
+	  local port="$$1"
+	  echo "[make] diagnostics: common suspects for port $$port"
+	  ps -eo pid,user,cmd | grep -nF -- "--port $$port" || true
+	  ps -eo pid,user,cmd | grep -nE -- "docker-proxy .* -host-port $$port([^0-9]|$$)" || true
+	  if command -v docker >/dev/null 2>&1; then
+	    echo "[make] diagnostics: docker containers publishing $$port"
+	    docker ps --filter "publish=$$port" --format "  - {{.Names}} ({{.Image}}) {{.Ports}}" || true
+	    if [[ -f "docker-compose.yml" ]]; then
+	      echo "[make] diagnostics: docker compose ps (if applicable)"
+	      docker compose ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null || true
+	    fi
+	  fi
+	}
+
+	backend_listener_looks_like_realmoi() {
+	  local port="$$1"
+	  if ps -eo cmd | grep -F "uvicorn backend.app.main:app" | grep -F -- "--port $$port" >/dev/null 2>&1; then
+	    return 0
+	  fi
+	  if command -v docker >/dev/null 2>&1; then
+	    if docker ps --filter "publish=$$port" --format "{{.Image}} {{.Names}}" | grep -E "realmoi/realmoi-backend|realmoi-backend" >/dev/null 2>&1; then
+	      return 0
+	    fi
+	  fi
+	  return 1
+	}
+
+	check_port_available() {
+	  local port="$$1"
+	  local name="$$2"
+	  if port_is_available "$$port"; then
+	    return 0
+	  fi
+	  echo "[make] error: $$name port $$port is unavailable (already in use or no permission)"
+	  print_port_diagnostics "$$port"
+	  echo "[make] hint: stop the process/container using the port, then re-run 'make dev'"
+	  echo "[make] hint: or override ports: 'make dev BACKEND_PORT=8001 FRONTEND_PORT=3001'"
+	  exit 1
+	}
+
+	wait_for_port() {
+	  local host="$$1"
+	  local port="$$2"
+	  local timeout_s="$$3"
+	  local tries
+	  tries=$$(python3 -X utf8 -c 'import sys; print(max(1, int(float(sys.argv[1]) * 10)))' "$$timeout_s")
+	  for ((i=0; i<tries; i++)); do
+	    if python3 -X utf8 -c 'import socket,sys; host=sys.argv[1]; port=int(sys.argv[2]); s=socket.socket(); s.settimeout(0.2); rc=s.connect_ex((host,port)); s.close(); sys.exit(0 if rc==0 else 1)' "$$host" "$$port" >/dev/null 2>&1; then
+	      return 0
+	    fi
+	    sleep 0.1
+	  done
+	  return 1
+	}
+
+	START_BACKEND=1
+	if ! port_is_available "$${BACKEND_PORT}"; then
+	  if wait_for_port "127.0.0.1" "$${BACKEND_PORT}" "0.5"; then
+	    if backend_listener_looks_like_realmoi "$${BACKEND_PORT}"; then
+	      START_BACKEND=0
+	      echo "[make] backend: detected existing listener on port $${BACKEND_PORT}; reusing"
+	    else
+	      echo "[make] error: backend port $${BACKEND_PORT} is in use, but it doesn't look like realmoi backend"
+	      print_port_diagnostics "$${BACKEND_PORT}"
+	      echo "[make] hint: stop the process/container using the port, then re-run 'make dev'"
+	      echo "[make] hint: or override ports: 'make dev BACKEND_PORT=8001 FRONTEND_PORT=3001'"
+	      exit 1
+	    fi
+	  else
+	    echo "[make] error: backend port $${BACKEND_PORT} is unavailable (already in use or no permission)"
+	    print_port_diagnostics "$${BACKEND_PORT}"
+	    echo "[make] hint: stop the process/container using the port, then re-run 'make dev'"
+	    echo "[make] hint: or override ports: 'make dev BACKEND_PORT=8001 FRONTEND_PORT=3001'"
+	    exit 1
+	  fi
+	fi
+
+	START_FRONTEND=1
+	if ! port_is_available "$${FRONTEND_PORT}"; then
+	  if wait_for_port "127.0.0.1" "$${FRONTEND_PORT}" "0.5"; then
+	    START_FRONTEND=0
+	    echo "[make] frontend: detected existing listener on port $${FRONTEND_PORT}; reusing"
+	  else
+	    echo "[make] error: frontend port $${FRONTEND_PORT} is unavailable (already in use or no permission)"
+	    print_port_diagnostics "$${FRONTEND_PORT}"
+	    echo "[make] hint: stop the process/container using the port, then re-run 'make dev'"
+	    echo "[make] hint: or override ports: 'make dev BACKEND_PORT=8001 FRONTEND_PORT=3001'"
+	    exit 1
+	  fi
+	fi
+
+	echo "[make] backend: http://localhost:$${BACKEND_PORT} (api: /api)"
+	echo "[make] runner executor: $${REALMOI_RUNNER_EXECUTOR}"
+	echo "[make] runner image (docker mode only): $${REALMOI_RUNNER_IMAGE}"
+	echo "[make] judge mode: $${REALMOI_JUDGE_MODE}"
+
+	if [[ "$${START_BACKEND}" -eq 1 ]]; then
+	  uvicorn backend.app.main:app --reload --host "$${BACKEND_HOST}" --port "$${BACKEND_PORT}" &
+	  BACKEND_PID=$$!
+
+	  if ! wait_for_port "127.0.0.1" "$${BACKEND_PORT}" "5.0"; then
+	    if ! kill -0 "$${BACKEND_PID}" 2>/dev/null; then
+	      echo "[make] error: backend process exited early"
+	    else
+	      echo "[make] error: backend did not start listening on port $${BACKEND_PORT} within timeout"
+	    fi
+	    exit 1
+	  fi
+	fi
+
+	if [[ "$${REALMOI_JUDGE_MODE}" == "independent" ]]; then
+	  if ps -eo cmd | grep -F "backend.app.judge_daemon" >/dev/null 2>&1; then
+	    echo "[make] judge: already running"
+	  else
+	    echo "[make] judge: starting independent daemon"
+	    export REALMOI_JUDGE_API_BASE_URL="$${REALMOI_JUDGE_API_BASE_URL:-http://127.0.0.1:$${BACKEND_PORT}}"
+	    python3 -X utf8 -m backend.app.judge_daemon &
+	    JUDGE_PID=$$!
+	  fi
+	fi
+
+	echo "[make] frontend: http://localhost:$${FRONTEND_PORT}"
+	if [[ "$${START_FRONTEND}" -eq 1 ]]; then
+	  cd "frontend"
+	  export NEXT_PUBLIC_API_BASE_URL="$${NEXT_PUBLIC_API_BASE_URL:-http://localhost:$${BACKEND_PORT}/api}"
+	  export PORT="$${FRONTEND_PORT}"
+	  npm run dev &
+	  FRONTEND_PID=$$!
+	fi
+	WAIT_PIDS=()
+	if [[ "$${BACKEND_PID}" -gt 0 ]]; then
+	  WAIT_PIDS+=("$${BACKEND_PID}")
+	fi
+	if [[ "$${FRONTEND_PID}" -gt 0 ]]; then
+	  WAIT_PIDS+=("$${FRONTEND_PID}")
+	fi
+	if [[ "$${#WAIT_PIDS[@]}" -gt 0 ]]; then
+	  wait "$${WAIT_PIDS[@]}"
+	elif [[ "$${JUDGE_PID}" -gt 0 ]]; then
+	  wait "$${JUDGE_PID}"
+	else
+	  echo "[make] note: backend/frontend/judge already running; nothing to do"
+	fi
 
 .PHONY: judge
 judge: backend-deps
